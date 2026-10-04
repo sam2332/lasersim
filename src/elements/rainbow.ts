@@ -1,6 +1,6 @@
 import { Sun, Rainbow } from 'lucide';
 import { rad, rotate } from '../core/math';
-import type { ElementDef, Emission } from '../core/types';
+import type { ElementDef, Emission, Signals } from '../core/types';
 import { absorber } from '../optics/materials';
 import { rectSurfaces } from '../optics/shapes';
 import { beamColor, spectrumSamples } from '../optics/spectrum';
@@ -17,6 +17,7 @@ interface RainbowProps {
 }
 
 const W = 58;
+const isOn = (p: RainbowProps, sig: Signals) => p.on && (!sig.wired.en || !!sig.inputs.en);
 const bodyH = (p: RainbowProps) => Math.max(24, (p.beams - 1) * p.spacing + 16);
 
 /** Spectrum emitter: parallel beams across the rainbow, or (spacing 0) a single white beam. */
@@ -40,12 +41,13 @@ const rainbow: ElementDef<RainbowProps> = {
     { kind: 'boolean', key: 'on', label: 'On' },
   ],
   activate: (p) => ({ on: !p.on }),
+  ports: () => [{ id: 'en', dir: 'in', position: { x: -W / 2 - 9, y: 0 }, label: 'enable' }],
 
   boundsRadius: (p) => Math.hypot(W / 2, bodyH(p) / 2),
   hitTest: (p, l) => Math.abs(l.x) <= W / 2 + 2 && Math.abs(l.y) <= bodyH(p) / 2 + 2,
   surfaces: (p) => rectSurfaces(W, bodyH(p), absorber),
-  emit: (p) => {
-    if (!p.on) return [];
+  emit: (p, sig) => {
+    if (!isOn(p, sig)) return [];
     const waves = spectrumSamples(p.beams);
     const white = p.spacing === 0;
     return waves.map((wavelength, i): Emission => {
@@ -60,7 +62,8 @@ const rainbow: ElementDef<RainbowProps> = {
   },
 
   createView: () =>
-    graphicsView<RainbowProps>((g, p) => {
+    graphicsView<RainbowProps>((g, p, state) => {
+      const on = isOn(p, state.signals);
       const h = bodyH(p);
       const white = p.spacing === 0;
       g.roundRect(-W / 2 + 3, -h / 2 + 5, W, h, 6).fill({ color: 0x000000, alpha: 0.4 });
@@ -73,12 +76,12 @@ const rainbow: ElementDef<RainbowProps> = {
       waves.forEach((w, i) => {
         g.rect(W / 2 - 22, -stripH / 2 + (i * stripH) / waves.length, 6, stripH / waves.length + 0.5).fill({
           color: white ? 0xffffff : beamColor(w),
-          alpha: p.on ? 0.95 : 0.3,
+          alpha: on ? 0.95 : 0.3,
         });
       });
       g.roundRect(W / 2 - 12, -h / 2 + 2, 12, h - 4, 2).fill({ fill: metalGradient() });
-      g.rect(W / 2 - 2, -h / 2 + 4, 2, h - 8).fill(p.on ? 0xffffff : 0x333a46);
-      g.circle(-W / 2 + 6, -h / 2 + 5, 2).fill(p.on ? 0x6dff9c : 0x3a2020);
+      g.rect(W / 2 - 2, -h / 2 + 4, 2, h - 8).fill(on ? 0xffffff : 0x333a46);
+      g.circle(-W / 2 + 6, -h / 2 + 5, 2).fill(on ? 0x6dff9c : 0x3a2020);
     }),
 };
 

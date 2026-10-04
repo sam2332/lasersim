@@ -1,7 +1,7 @@
 import confetti from 'canvas-confetti';
 import gsap from 'gsap';
 import { getDef } from '../core/registry';
-import type { Scene } from '../core/types';
+import { NO_SIGNALS, type Scene, type Signals } from '../core/types';
 
 /** Goal progress ("2 / 3 orbs lit") and the celebration when everything is lit. */
 export class Hud {
@@ -10,10 +10,11 @@ export class Hud {
 
   constructor(private readonly host: HTMLElement) {}
 
-  update(scene: Scene, energy: Map<string, number>): void {
+  update(scene: Scene, energy: Map<string, number>, signals: Map<string, Signals>): void {
     const goals = scene.elements.flatMap((el) => {
       const def = getDef(el.type);
-      return def?.goalMet ? [def.goalMet(el.props, energy.get(el.id) ?? 0)] : [];
+      const met = def?.goalMet?.(el.props, energy.get(el.id) ?? 0, signals.get(el.id) ?? NO_SIGNALS);
+      return met == null ? [] : [met];
     });
     const lit = goals.filter(Boolean).length;
     const solved = goals.length > 0 && lit === goals.length;
@@ -38,7 +39,7 @@ export class Hud {
     this.host.classList.toggle('solved', solved);
     this.host.innerHTML = `
       <div class="hud-dots">${goals.map((g) => `<span class="dot ${g ? 'on' : ''}"></span>`).join('')}</div>
-      <div class="hud-text">${solved ? 'All orbs ignited!' : `${lit} / ${goals.length} orbs lit`}</div>`;
+      <div class="hud-text">${solved ? 'All goals complete!' : `${lit} / ${goals.length} goals lit`}</div>`;
   }
 
   private celebrate(): void {

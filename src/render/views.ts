@@ -1,6 +1,6 @@
 import type { Container } from 'pixi.js';
 import { getDef } from '../core/registry';
-import type { ElementView, Scene, SceneElement, ViewContext, ViewState } from '../core/types';
+import { NO_SIGNALS, type ElementView, type Scene, type SceneElement, type Signals, type ViewContext, type ViewState } from '../core/types';
 
 interface Entry {
   type: string;
@@ -18,7 +18,7 @@ export class ViewManager {
     private readonly ctx: ViewContext,
   ) {}
 
-  sync(scene: Scene, energy: Map<string, number>, selectedId: string | null): void {
+  sync(scene: Scene, energy: Map<string, number>, selectedId: string | null, signals: Map<string, Signals>): void {
     const seen = new Set<string>();
     scene.elements.forEach((el, index) => {
       seen.add(el.id);
@@ -32,11 +32,11 @@ export class ViewManager {
         if (!def) return;
         const view = def.createView(this.ctx);
         this.layer.addChild(view.root);
-        entry = { type: el.type, view, el, state: { selected: false, energy: 0 } };
+        entry = { type: el.type, view, el, state: { selected: false, energy: 0, signals: NO_SIGNALS } };
         this.entries.set(el.id, entry);
       }
       entry.el = el;
-      entry.state = { selected: el.id === selectedId, energy: energy.get(el.id) ?? 0 };
+      entry.state = { selected: el.id === selectedId, energy: energy.get(el.id) ?? 0, signals: signals.get(el.id) ?? NO_SIGNALS };
       const root = entry.view.root;
       root.position.set(el.x, el.y);
       root.rotation = el.rotation;

@@ -1,11 +1,17 @@
-import { Download, FolderOpen, Link, Maximize, Redo2, Trash, Undo2 } from 'lucide';
+import { Download, FolderOpen, Link, Maximize, Pause, Play, Redo2, RotateCcw, StepForward, Trash, Undo2 } from 'lucide';
 import { clearHash, downloadScene, pickSceneFile, shareUrl } from '../core/persistence';
+import { setSetting, settings, settingsEvents } from '../core/settings';
 import type { Store } from '../core/store';
-import { presets } from '../presets';
-import { iconButton } from './icons';
+import { PRESET_GROUPS, presets } from '../presets';
+import { icon, iconButton } from './icons';
 import { toast } from './toast';
 
-export function mountTopbar(host: HTMLElement, store: Store, onFit: () => void): void {
+export interface SimControls {
+  step(): void;
+  reset(): void;
+}
+
+export function mountTopbar(host: HTMLElement, store: Store, onFit: () => void, sim: SimControls): void {
   host.innerHTML = '';
 
   const brand = document.createElement('div');
@@ -15,12 +21,18 @@ export function mountTopbar(host: HTMLElement, store: Store, onFit: () => void):
   const select = document.createElement('select');
   select.className = 'preset-select';
   select.title = 'Load a preset board';
-  select.innerHTML = `<option value="" disabled selected>Load preset…</option>` + presets.map((p) => `<option value="${p.id}">${p.name}</option>`).join('');
+  select.innerHTML =
+    `<option value="" disabled selected>Load example…</option>` +
+    PRESET_GROUPS.map((g) => {
+      const items = presets.filter((p) => p.group === g);
+      return items.length ? `<optgroup label="${g}">${items.map((p) => `<option value="${p.id}">${p.name}</option>`).join('')}</optgroup>` : '';
+    }).join('');
   select.addEventListener('change', () => {
     const p = presets.find((x) => x.id === select.value);
     select.value = '';
     if (!p) return;
     store.load(p.build());
+    sim.reset();
     onFit();
     toast(`Loaded “${p.name}”`);
   });
@@ -34,6 +46,21 @@ export function mountTopbar(host: HTMLElement, store: Store, onFit: () => void):
   store.events.on('commit', sync);
   store.events.on('change', sync);
   sync();
+
+  // Simulation transport.
+  const play = iconButton(Pause, 'Pause simulation', () => setSetting('paused', !settings.paused));
+  const stepBtn = iconButton(StepForward, 'Single step (while paused)', () => sim.step());
+  const rate = document.createElement('span');
+  rate.className = 'sim-rate';
+  const syncSim = () => {
+    play.replaceChildren(icon(settings.paused ? Play : Pause));
+    play.title = settings.paused ? 'Run simulation' : 'Pause simulation';
+    play.classList.toggle('active', settings.paused);
+    stepBtn.disabled = !settings.paused;
+    rate.textContent = settings.paused ? 'paused' : `${settings.simRate} Hz`;
+  };
+  settingsEvents.on('change', syncSim);
+  syncSim();
 
   const spacer = document.createElement('div');
   spacer.className = 'spacer';
@@ -50,6 +77,14 @@ export function mountTopbar(host: HTMLElement, store: Store, onFit: () => void):
     sep(),
     undo,
     redo,
+    sep(),
+    play,
+    stepBtn,
+    iconButton(RotateCcw, 'Reset simulation state (latches, counters, clocks)', () => {
+      sim.reset();
+      toast('Simulation reset');
+    }),
+    rate,
     spacer,
     iconButton(Maximize, 'Fit board to view', onFit),
     sep(),
@@ -57,6 +92,7 @@ export function mountTopbar(host: HTMLElement, store: Store, onFit: () => void):
       const scene = await pickSceneFile();
       if (scene) {
         store.load(scene);
+        sim.reset();
         onFit();
         toast('Scene loaded');
       }
@@ -79,7 +115,7 @@ export function mountTopbar(host: HTMLElement, store: Store, onFit: () => void):
     sep(),
     iconButton(Trash, 'Clear the board', () => {
       if (!store.scene.elements.length) return;
-      store.load({ ...store.scene, elements: [] });
+      store.load({ ...store.scene, elements: [], wires: [] });
       clearHash();
       toast('Board cleared — Ctrl+Z to undo');
     }),

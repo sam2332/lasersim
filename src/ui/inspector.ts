@@ -47,6 +47,11 @@ export class Inspector {
     const el = this.store.selected;
     const def = el && getDef(el.type);
     this.boundId = el?.id ?? null;
+    const wire = this.store.selectedWire;
+    if (wire) {
+      this.elementHost.append(this.wireCard(wire.from, wire.to, wire.id));
+      return;
+    }
     if (!el || !def) {
       this.elementHost.append(this.emptyState());
       return;
@@ -117,6 +122,9 @@ export class Inspector {
       case 'select':
         this.bind(folder, spec.key, { label: spec.label, options: spec.options }, 'prop');
         break;
+      case 'text':
+        this.bind(folder, spec.key, { label: spec.label, view: spec.multiline ? 'textarea' : undefined }, 'prop');
+        break;
       case 'wavelength': {
         const b = this.bind(folder, spec.key, { min: VISIBLE_MIN, max: VISIBLE_MAX, step: 1, label: `${spec.label} (nm)` }, 'prop');
         b.element.append(spectrumBar(() => this.model[spec.key] as number));
@@ -142,6 +150,22 @@ export class Inspector {
     });
   }
 
+  private wireCard(from: { el: string; port: string }, to: { el: string; port: string }, id: string): HTMLElement {
+    const name = (end: { el: string; port: string }) => {
+      const el = this.store.get(end.el);
+      return `${(el && getDef(el.type)?.label) ?? '?'} · ${end.port}`;
+    };
+    const d = document.createElement('div');
+    d.className = 'empty-state';
+    d.innerHTML = `<h3>Wire</h3><p>${name(from)} → ${name(to)}</p>`;
+    const b = document.createElement('button');
+    b.className = 'btn danger';
+    b.textContent = 'Delete wire (Del)';
+    b.onclick = () => this.store.removeWire(id);
+    d.append(b);
+    return d;
+  }
+
   private emptyState(): HTMLElement {
     const d = document.createElement('div');
     d.className = 'empty-state';
@@ -154,6 +178,9 @@ export class Inspector {
         <li>Drag the ◆ handles to reshape</li>
         <li><kbd>Space</kbd> / double-click toggles lasers</li>
         <li><kbd>Ctrl</kbd>+<kbd>Z</kbd> undo · <kbd>Del</kbd> delete</li>
+        <li>Drag from a port ● to another port ○ to wire it</li>
+        <li>Click a wire, then <kbd>Del</kbd> to remove it</li>
+        <li>Click switches/buttons to operate them</li>
         <li>Wheel zoom · drag empty space to pan</li>
       </ul>`;
     return d;
@@ -169,6 +196,7 @@ export class Inspector {
     on('fresnel', { label: 'Glass reflections' });
     on('grid', { label: 'Grid' });
     on('particles', { label: 'Particles' });
+    on('simRate', { label: 'Sim speed (Hz)', min: 1, max: 60, step: 1 });
     pane.addButton({ title: 'Fit board to view' }).on('click', onFit);
   }
 }

@@ -1,6 +1,6 @@
 import mitt from 'mitt';
 import { getDef } from './registry';
-import type { Props, Scene, SceneElement } from './types';
+import type { Props, Scene, SceneElement, Wire } from './types';
 
 type StoreEvents = {
   /** Scene contents changed (any edit, undo, load). */
@@ -55,13 +55,19 @@ export function sanitizeScene(raw: unknown): Scene | null {
     });
   }
   const board = s.board && s.board.width > 0 && s.board.height > 0 ? s.board : { width: 1800, height: 1100 };
-  return { version: 1, board, elements };
+  const ids = new Set(elements.map((e) => e.id));
+  const wires: Wire[] = (Array.isArray(s.wires) ? s.wires : []).filter(
+    (w) => w && ids.has(w.from?.el) && ids.has(w.to?.el) && typeof w.from.port === 'string' && typeof w.to.port === 'string',
+  );
+  for (const w of wires) if (typeof w.id !== 'string') w.id = newId();
+  return { version: 1, board, elements, wires };
 }
 
 export class Store {
   readonly events = mitt<StoreEvents>();
   scene: Scene;
   selectedId: string | null = null;
+  selectedWireId: string | null = null;
 
   private undoStack: string[] = [];
   private redoStack: string[] = [];
@@ -81,9 +87,38 @@ export class Store {
   }
 
   select(id: string | null): void {
-    if (id === this.selectedId) return;
+    if (id === this.selectedId && !this.selectedWireId) return;
     this.selectedId = id;
+    this.selectedWireId = null;
     this.events.emit('select', id);
+  }
+
+  selectWire(id: string | null): void {
+    if (id === this.selectedWireId && !this.selectedId) return;
+    this.selectedWireId = id;
+    this.selectedId = null;
+    this.events.emit('select', null);
+  }
+
+  get selectedWire(): Wire | undefined {
+    return this.scene.wires.find((w) => w.id === this.selectedWireId);
+  }
+
+  /** Connect an output port to an input port (an input takes only one wire). */
+  addWire(from: Wire['from'], to: Wire['to']): void {
+    this.scene.wires = this.scene.wires.filter((w) => !(w.to.el === to.el && w.to.port === to.port));
+    this.scene.wires.push({ id: newId(), from, to });
+    this.changed();
+    this.commit();
+  }
+
+  removeWire(id: string, commit = true): void {
+    const before = this.scene.wires.length;
+    this.scene.wires = this.scene.wires.filter((w) => w.id !== id);
+    if (this.scene.wires.length === before) return;
+    if (this.selectedWireId === id) this.selectWire(null);
+    this.changed();
+    if (commit) this.commit();
   }
 
   add(el: SceneElement, select = true): void {
@@ -97,6 +132,7 @@ export class Store {
     const i = this.scene.elements.findIndex((e) => e.id === id);
     if (i < 0) return;
     this.scene.elements.splice(i, 1);
+    this.scene.wires = this.scene.wires.filter((w) => w.from.el !== id && w.to.el !== id);
     if (this.selectedId === id) this.select(null);
     this.changed();
     this.commit();
@@ -168,6 +204,7 @@ export class Store {
     this.committed = json;
     this.scene = JSON.parse(json);
     if (!this.get(this.selectedId)) this.select(null);
+    if (this.selectedWireId && !this.selectedWire) this.selectWire(null);
     this.changed();
     this.events.emit('commit');
   }

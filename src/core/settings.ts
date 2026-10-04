@@ -10,6 +10,9 @@ export interface Settings {
   grid: boolean;
   /** Spark particles and ambient effects. */
   particles: boolean;
+  /** Logic simulation steps per second. */
+  simRate: number;
+  paused: boolean;
 }
 
 const KEY = 'lasersim.settings';
@@ -20,6 +23,8 @@ const DEFAULTS: Settings = {
   bloom: 1.1,
   grid: true,
   particles: true,
+  simRate: 20,
+  paused: false,
 };
 
 function load(): Settings {

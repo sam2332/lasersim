@@ -4,6 +4,7 @@ import { el, scene } from './helpers';
 const preset: Preset = {
   id: 'gravity-well',
   name: 'Gravity Well',
+  group: 'Optics',
   order: 3,
   build: () =>
     scene([

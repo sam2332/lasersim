@@ -4,6 +4,7 @@ import { scene } from './helpers';
 const preset: Preset = {
   id: 'empty',
   name: 'Empty board',
+  group: 'Sandbox',
   order: 99,
   build: () => scene([]),
 };

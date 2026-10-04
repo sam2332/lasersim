@@ -4,6 +4,7 @@ import { el, scene } from './helpers';
 const preset: Preset = {
   id: 'event-horizon',
   name: 'Event Horizon',
+  group: 'Optics',
   order: 0,
   build: () =>
     scene([

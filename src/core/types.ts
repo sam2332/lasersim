@@ -1,6 +1,7 @@
 import type { Container } from 'pixi.js';
 import type { IconNode } from 'lucide';
 import type { Vec2 } from './math';
+import type { Jones } from '../optics/polarization';
 import type { Textures } from '../render/textures';
 import type { FxSystem } from '../render/fx';
 
@@ -21,10 +22,18 @@ export interface SceneElement<P extends object = Props> {
   props: P;
 }
 
+/** A connection from an output port to an input port. */
+export interface Wire {
+  id: string;
+  from: { el: string; port: string };
+  to: { el: string; port: string };
+}
+
 export interface Scene {
   version: 1;
   board: { width: number; height: number };
   elements: SceneElement[];
+  wires: Wire[];
 }
 
 // ---------------------------------------------------------------------------
@@ -37,6 +46,8 @@ export interface Ray {
   /** Nanometres, 380–700. */
   wavelength: number;
   intensity: number;
+  /** Polarization state (Jones vector); null = unpolarized. */
+  pol: Jones | null;
   depth: number;
 }
 
@@ -57,6 +68,8 @@ export interface OutRay {
   dir: Vec2;
   intensity: number;
   wavelength?: number;
+  /** undefined = keep the incoming polarization, null = unpolarized. */
+  pol?: Jones | null;
 }
 
 export interface InteractionContext {
@@ -101,12 +114,52 @@ export interface Emission {
   dir: Vec2;
   wavelength: number;
   intensity: number;
+  pol?: Jones | null;
 }
 
 /** A gravitational field that bends light continuously (black holes). */
 export interface Field {
   strength: number;
   horizon: number;
+}
+
+// ---------------------------------------------------------------------------
+// Signals (wiring / logic)
+// ---------------------------------------------------------------------------
+
+export interface Port {
+  id: string;
+  dir: 'in' | 'out';
+  /** Local-space position (just outside the body). */
+  position: Vec2;
+  /** Local-space direction wires leave in (defaults to away from the centre). */
+  normal?: Vec2;
+  label?: string;
+}
+
+/** Current digital state around one element. */
+export interface Signals {
+  inputs: Record<string, boolean>;
+  /** Whether an input port has a wire attached. */
+  wired: Record<string, boolean>;
+  outputs: Record<string, boolean>;
+}
+
+export const NO_SIGNALS: Signals = Object.freeze({ inputs: {}, wired: {}, outputs: {} }) as Signals;
+
+export interface LogicContext<P> {
+  props: P;
+  inputs: Record<string, boolean>;
+  wired: Record<string, boolean>;
+  /** Light deposited on this element by the latest trace. */
+  energy: number;
+  /** Per-element runtime memory (not saved). */
+  state: Record<string, any>;
+  /** Simulation time in seconds. */
+  time: number;
+  dt: number;
+  /** The user clicked/activated a momentary element since the last step. */
+  triggered: boolean;
 }
 
 // ---------------------------------------------------------------------------
@@ -119,7 +172,8 @@ export type ParamSpec<P> =
   | { kind: 'number'; key: Key<P>; label: string; min: number; max: number; step?: number }
   | { kind: 'boolean'; key: Key<P>; label: string }
   | { kind: 'select'; key: Key<P>; label: string; options: Record<string, string | number> }
-  | { kind: 'wavelength'; key: Key<P>; label: string };
+  | { kind: 'wavelength'; key: Key<P>; label: string }
+  | { kind: 'text'; key: Key<P>; label: string; multiline?: boolean };
 
 // ---------------------------------------------------------------------------
 // Editing
@@ -141,6 +195,7 @@ export interface ViewState {
   selected: boolean;
   /** Light energy deposited on this element by the last trace. */
   energy: number;
+  signals: Signals;
 }
 
 export interface ViewContext {
@@ -160,7 +215,7 @@ export interface ElementView<P extends object> {
 // Element definition — one per file in src/elements
 // ---------------------------------------------------------------------------
 
-export type Category = 'source' | 'optic' | 'obstacle' | 'goal' | 'field';
+export type Category = 'source' | 'optic' | 'photonics' | 'io' | 'logic' | 'obstacle' | 'goal' | 'field' | 'note';
 
 export interface Variant<P> {
   label: string;
@@ -185,18 +240,30 @@ export interface ElementDef<P extends object = any> {
   /** Read-only derived values shown in the inspector. */
   info?(props: P): Record<string, string>;
   rotatable?: boolean;
-  /** Makes this a puzzle goal; returns whether it is satisfied by the deposited light. */
-  goalMet?(props: P, energy: number): boolean;
+  /** Makes this a puzzle goal; returns whether it is currently satisfied (null = not a goal right now). */
+  goalMet?(props: P, energy: number, signals: Signals): boolean | null;
 
   boundsRadius(props: P): number;
   hitTest(props: P, local: Vec2): boolean;
   handles?(props: P): Handle<P>[];
   /** Double-click / Space behaviour (e.g. power toggle). */
   activate?(props: P): Partial<P>;
+  /** Activation sends a momentary runtime pulse instead of changing props (push buttons). */
+  trigger?: boolean;
+  /** A plain click (without dragging) activates it — switches and buttons. */
+  clickActivate?: boolean;
 
-  surfaces?(props: P): Surface[];
-  emit?(props: P): Emission[];
+  /** Optics. `signals` lets wired inputs change behaviour (shutters, laser enable…). */
+  surfaces?(props: P, signals: Signals): Surface[];
+  emit?(props: P, signals: Signals): Emission[];
   field?(props: P): Field;
+
+  /** Wiring ports. */
+  ports?(props: P): Port[];
+  /** One simulation step: return the new output port values. */
+  logic?(ctx: LogicContext<P>): Record<string, boolean>;
+  /** Output values before the first step (power-on state). */
+  initialOutputs?(props: P): Record<string, boolean>;
 
   createView(ctx: ViewContext): ElementView<P>;
 }

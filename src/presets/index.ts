@@ -1,8 +1,11 @@
 import type { Scene } from '../core/types';
 
+export type PresetGroup = 'Optics' | 'Photonics' | 'Logic & signals' | 'Sandbox';
+
 export interface Preset {
   id: string;
   name: string;
+  group: PresetGroup;
   order: number;
   build(): Scene;
 }
@@ -16,3 +19,5 @@ export const presets: Preset[] = Object.values(modules)
   .sort((a, b) => a.order - b.order);
 
 export const getPreset = (id: string) => presets.find((p) => p.id === id);
+
+export const PRESET_GROUPS: PresetGroup[] = ['Optics', 'Photonics', 'Logic & signals', 'Sandbox'];

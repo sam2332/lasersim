@@ -4,6 +4,7 @@ import { el, scene } from './helpers';
 const preset: Preset = {
   id: 'lens-bench',
   name: 'Lens Bench',
+  group: 'Optics',
   order: 2,
   build: () =>
     scene([

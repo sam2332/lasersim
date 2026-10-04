@@ -1,6 +1,6 @@
 import { Frame, type Vec2 } from '../core/math';
 import { getDef } from '../core/registry';
-import type { ElementDef, Hit, OpticsSettings, Ray, Scene, SceneElement, Surface } from '../core/types';
+import { NO_SIGNALS, type ElementDef, type Hit, type OpticsSettings, type Ray, type Scene, type SceneElement, type Signals, type Surface } from '../core/types';
 import { distanceToRay, exitBoard, intersectSurface } from './geometry';
 import { capturedBy, gravityAt, makeWorldField, marchStep, type WorldField } from './gravity';
 
@@ -43,7 +43,8 @@ interface Prepared {
   radius: number;
 }
 
-export function trace(scene: Scene, settings: OpticsSettings): TraceResult {
+/** `signals` supplies each element's current wired inputs (lasers with enable ports, shutters…). */
+export function trace(scene: Scene, settings: OpticsSettings, signals?: Map<string, Signals>): TraceResult {
   const { width: W, height: H } = scene.board;
   const prepared: Prepared[] = [];
   const fields: WorldField[] = [];
@@ -53,16 +54,18 @@ export function trace(scene: Scene, settings: OpticsSettings): TraceResult {
     const def = getDef(el.type);
     if (!def) continue;
     const frame = new Frame(el.x, el.y, el.rotation);
-    const surfaces = def.surfaces?.(el.props) ?? [];
+    const sig = signals?.get(el.id) ?? NO_SIGNALS;
+    const surfaces = def.surfaces?.(el.props, sig) ?? [];
     if (surfaces.length) prepared.push({ el, def, frame, surfaces, radius: def.boundsRadius(el.props) + 1 });
     const field = def.field?.(el.props);
     if (field) fields.push(makeWorldField(el.x, el.y, field.strength, field.horizon));
-    for (const e of def.emit?.(el.props) ?? []) {
+    for (const e of def.emit?.(el.props, sig) ?? []) {
       queue.push({
         origin: frame.toWorld(e.origin),
         dir: frame.dirToWorld(e.dir),
         wavelength: e.wavelength,
         intensity: e.intensity,
+        pol: e.pol ?? null,
         depth: 0,
       });
     }
@@ -117,6 +120,7 @@ export function trace(scene: Scene, settings: OpticsSettings): TraceResult {
             dir,
             wavelength: r.wavelength ?? ray.wavelength,
             intensity: r.intensity,
+            pol: r.pol === undefined ? ray.pol : r.pol,
             depth: ray.depth + 1,
           });
         }

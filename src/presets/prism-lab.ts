@@ -4,6 +4,7 @@ import { el, scene } from './helpers';
 const preset: Preset = {
   id: 'prism-lab',
   name: 'Prism Lab',
+  group: 'Optics',
   order: 1,
   build: () =>
     scene([

@@ -67,7 +67,7 @@ const target: ElementDef<TargetProps> = {
           root.addChild(halo, orb, glow);
         },
         update: (el, state) => {
-          const nowLit = target.goalMet!(el.props, state.energy);
+          const nowLit = !!target.goalMet!(el.props, state.energy, state.signals);
           const r = el.props.radius;
           orb.scale.set((r * 2) / 256);
           if (nowLit !== lit) {

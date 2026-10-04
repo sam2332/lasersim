@@ -23,7 +23,7 @@ export function graphicsView<P extends object>(
   return {
     root,
     update(el, state) {
-      const k = JSON.stringify(el.props) + state.selected;
+      const k = JSON.stringify(el.props) + state.selected + JSON.stringify(state.signals) + state.energy.toFixed(2);
       if (k !== key) {
         key = k;
         g.clear();

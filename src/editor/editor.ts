@@ -3,31 +3,49 @@ import { Frame, rad, snapTo, type Vec2 } from '../core/math';
 import { getDef } from '../core/registry';
 import { settings } from '../core/settings';
 import { makeElement, type Store } from '../core/store';
-import type { ElementDef, Handle, Props, SceneElement } from '../core/types';
+import type { ElementDef, Handle, Port, Props, SceneElement, Wire } from '../core/types';
+import { findPort, portNormalWorld, portsOf, portWorld, wireCurve } from '../logic/ports';
 import type { Stage } from '../render/stage';
 import { COLORS } from '../render/style';
+import { SIGNAL_ON } from '../render/wires';
+
+interface PortRef {
+  el: SceneElement;
+  port: Port;
+}
 
 type Drag =
-  | { kind: 'move'; id: string; offset: Vec2 }
+  | { kind: 'move'; id: string; offset: Vec2; moved: boolean }
   | { kind: 'rotate'; id: string }
-  | { kind: 'handle'; id: string; handle: Handle<Props> };
+  | { kind: 'handle'; id: string; handle: Handle<Props> }
+  | { kind: 'wire'; from: PortRef; pointer: Vec2 };
+
+export interface EditorRuntime {
+  /** Send a momentary pulse to an element (push buttons). */
+  trigger(id: string): void;
+}
 
 const POS_STEP = 10;
 const ROT_STEP = rad(15);
 const ROTATE_GAP = 26;
 
-/** Pointer + keyboard editing: select, move, rotate, drag element handles, shortcuts. */
+/**
+ * Pointer + keyboard editing: select, move, rotate, reshape via handles,
+ * draw wires between ports, and shortcuts.
+ */
 export class Editor {
   private overlay = new Graphics();
   private drag: Drag | null = null;
   private downAt: Vec2 | null = null;
   private hoverId: string | null = null;
+  private hoverPort: PortRef | null = null;
   private shift = false;
   private lastClick = { id: '', time: 0 };
 
   constructor(
     private readonly stage: Stage,
     private readonly store: Store,
+    private readonly runtime: EditorRuntime,
   ) {
     stage.layers.overlay.addChild(this.overlay);
     const vp = stage.viewport;
@@ -71,15 +89,27 @@ export class Editor {
       }
     }
 
+    const port = this.portAt(w);
+    if (port) {
+      this.beginWire(port, w);
+      return;
+    }
+
     const el = this.elementAt(w);
-    if (!el) return;
-    this.store.select(el.id);
+    if (el) {
+      this.store.select(el.id);
+      const now = performance.now();
+      const def = getDef(el.type);
+      if (!def?.clickActivate && this.lastClick.id === el.id && now - this.lastClick.time < 350) this.activate(el);
+      this.lastClick = { id: el.id, time: now };
+      if (!el.locked || def?.clickActivate) {
+        this.beginDrag({ kind: 'move', id: el.id, offset: { x: el.x - w.x, y: el.y - w.y }, moved: false });
+      }
+      return;
+    }
 
-    const now = performance.now();
-    if (this.lastClick.id === el.id && now - this.lastClick.time < 350) this.activate(el);
-    this.lastClick = { id: el.id, time: now };
-
-    if (!el.locked) this.beginDrag({ kind: 'move', id: el.id, offset: { x: el.x - w.x, y: el.y - w.y } });
+    const wire = this.wireAt(w);
+    if (wire) this.store.selectWire(wire.id);
   }
 
   private onMove(e: FederatedPointerEvent): void {
@@ -88,19 +118,32 @@ export class Editor {
     if (!this.drag) {
       const sel = this.store.selected;
       const overHandle = sel && !sel.locked && this.handleAt(sel, w);
-      const hover = this.elementAt(w);
-      if ((hover?.id ?? null) !== this.hoverId) {
+      const port = this.portAt(w);
+      const hover = port ? undefined : this.elementAt(w);
+      if ((hover?.id ?? null) !== this.hoverId || port?.port !== this.hoverPort?.port) {
         this.hoverId = hover?.id ?? null;
+        this.hoverPort = port;
         this.redraw();
       }
-      this.stage.app.canvas.style.cursor = overHandle ? 'crosshair' : hover ? (hover.locked ? 'pointer' : 'grab') : 'default';
+      const def = hover && getDef(hover.type);
+      this.stage.app.canvas.style.cursor =
+        overHandle || port ? 'crosshair' : hover ? (def?.clickActivate ? 'pointer' : hover.locked ? 'pointer' : 'grab') : this.wireAt(w) ? 'pointer' : 'default';
       return;
     }
 
-    const el = this.store.get(this.drag.id);
-    if (!el) return;
     const d = this.drag;
+    if (d.kind === 'wire') {
+      d.pointer = w;
+      this.hoverPort = this.portAt(w);
+      this.redraw();
+      return;
+    }
+    const el = this.store.get(d.id);
+    if (!el) return;
     if (d.kind === 'move') {
+      if (this.downAt && Math.hypot(e.global.x - this.downAt.x, e.global.y - this.downAt.y) < 4 && !d.moved) return;
+      if (el.locked) return;
+      d.moved = true;
       const p = this.snapPoint({ x: w.x + d.offset.x, y: w.y + d.offset.y });
       this.store.update(el.id, { x: p.x, y: p.y }, false);
     } else if (d.kind === 'rotate') {
@@ -116,16 +159,24 @@ export class Editor {
   }
 
   private onUp(): void {
-    const wasClick = this.downAt && !this.drag;
-    if (this.drag) {
+    const d = this.drag;
+    const wasClick = this.downAt && !d;
+    if (d) {
       this.drag = null;
       this.stage.viewport.plugins.resume('drag');
+      if (d.kind === 'wire') this.finishWire(d.from, d.pointer);
+      if (d.kind === 'move' && !d.moved) {
+        const el = this.store.get(d.id);
+        if (el && getDef(el.type)?.clickActivate) this.activate(el);
+      }
       this.store.commit();
+      this.redraw();
     }
     // Clicking empty space (without panning) clears the selection.
     if (wasClick && this.downAt) {
       const g = this.stage.app.renderer.events.pointer.global;
-      if (Math.hypot(g.x - this.downAt.x, g.y - this.downAt.y) < 5 && !this.elementAt(this.stage.viewport.toWorld(g))) {
+      const w = this.stage.viewport.toWorld(g);
+      if (Math.hypot(g.x - this.downAt.x, g.y - this.downAt.y) < 5 && !this.elementAt(w) && !this.wireAt(w)) {
         this.store.select(null);
       }
     }
@@ -135,8 +186,38 @@ export class Editor {
   private beginDrag(d: Drag): void {
     this.drag = d;
     this.stage.viewport.plugins.pause('drag');
-    this.stage.app.canvas.style.cursor = 'grabbing';
+    this.stage.app.canvas.style.cursor = d.kind === 'wire' ? 'crosshair' : 'grabbing';
   }
+
+  // ---------------------------------------------------------------- wiring
+
+  private beginWire(port: PortRef, w: Vec2): void {
+    // Grabbing a connected input picks up its wire so it can be moved or dropped off.
+    if (port.port.dir === 'in') {
+      const existing = this.store.scene.wires.find((x) => x.to.el === port.el.id && x.to.port === port.port.id);
+      const src = existing && this.store.get(existing.from.el);
+      const srcPort = src && findPort(src, existing.from.port);
+      if (existing && src && srcPort) {
+        this.store.removeWire(existing.id, false);
+        this.beginDrag({ kind: 'wire', from: { el: src, port: srcPort }, pointer: w });
+        return;
+      }
+    }
+    this.beginDrag({ kind: 'wire', from: port, pointer: w });
+  }
+
+  private finishWire(from: PortRef, pointer: Vec2): void {
+    const to = this.portAt(pointer);
+    if (!to || !this.compatible(from, to)) return;
+    const [out, inp] = from.port.dir === 'out' ? [from, to] : [to, from];
+    this.store.addWire({ el: out.el.id, port: out.port.id }, { el: inp.el.id, port: inp.port.id });
+  }
+
+  private compatible(a: PortRef, b: PortRef): boolean {
+    return a.el.id !== b.el.id && a.port.dir !== b.port.dir;
+  }
+
+  // ---------------------------------------------------------------- hit tests
 
   private get snapping(): boolean {
     return settings.snap !== this.shift;
@@ -146,8 +227,6 @@ export class Editor {
     return this.snapping ? { x: snapTo(p.x, POS_STEP), y: snapTo(p.y, POS_STEP) } : p;
   }
 
-  // ---------------------------------------------------------------- hit tests
-
   private elementAt(w: Vec2): SceneElement | undefined {
     const els = this.store.scene.elements;
     for (let i = els.length - 1; i >= 0; i--) {
@@ -156,6 +235,42 @@ export class Editor {
       if (def?.hitTest(el.props, new Frame(el.x, el.y, el.rotation).toLocal(w))) return el;
     }
     return undefined;
+  }
+
+  private portAt(w: Vec2): PortRef | null {
+    const r = Math.max(9, 9 / this.stage.viewport.scale.x);
+    let best: PortRef | null = null;
+    let bestD = r;
+    for (const el of this.store.scene.elements) {
+      for (const port of portsOf(el)) {
+        const p = portWorld(el, port);
+        const d = Math.hypot(p.x - w.x, p.y - w.y);
+        if (d < bestD) {
+          bestD = d;
+          best = { el, port };
+        }
+      }
+    }
+    return best;
+  }
+
+  private wireAt(w: Vec2): Wire | undefined {
+    const tol = Math.max(5, 6 / this.stage.viewport.scale.x);
+    for (const wire of this.store.scene.wires) {
+      const pts = this.wirePoints(wire);
+      if (!pts) continue;
+      for (let i = 1; i < pts.length; i++) if (distToSegment(w, pts[i - 1], pts[i]) < tol) return wire;
+    }
+    return undefined;
+  }
+
+  private wirePoints(wire: Wire): Vec2[] | null {
+    const a = this.store.get(wire.from.el);
+    const b = this.store.get(wire.to.el);
+    const pa = a && findPort(a, wire.from.port);
+    const pb = b && findPort(b, wire.to.port);
+    if (!a || !b || !pa || !pb) return null;
+    return wireCurve(portWorld(a, pa), portNormalWorld(a, pa), portWorld(b, pb), portNormalWorld(b, pb), 20);
   }
 
   private handleAt(el: SceneElement, w: Vec2): Handle<Props> | 'rotate' | null {
@@ -180,8 +295,14 @@ export class Editor {
 
   // ---------------------------------------------------------------- actions
 
-  private activate(el: SceneElement): void {
-    const patch = getDef(el.type)?.activate?.(el.props);
+  activate(el: SceneElement): void {
+    const def = getDef(el.type);
+    if (!def) return;
+    if (def.trigger) {
+      this.runtime.trigger(el.id);
+      return;
+    }
+    const patch = def.activate?.(el.props);
     if (patch) this.store.updateProps(el.id, patch);
   }
 
@@ -190,7 +311,6 @@ export class Editor {
     const t = e.target as HTMLElement | null;
     if (t && (t.closest('input, textarea, select, [contenteditable]') || t.closest('.tp-rotv'))) return;
     const mod = e.ctrlKey || e.metaKey;
-    const sel = this.store.selected;
 
     if (mod && e.key.toLowerCase() === 'z') {
       e.preventDefault();
@@ -203,6 +323,15 @@ export class Editor {
       this.store.redo();
       return;
     }
+
+    const wire = this.store.selectedWire;
+    if (wire) {
+      if (e.key === 'Delete' || e.key === 'Backspace') this.store.removeWire(wire.id);
+      if (e.key === 'Escape') this.store.selectWire(null);
+      return;
+    }
+
+    const sel = this.store.selected;
     if (!sel) return;
 
     switch (e.key) {
@@ -258,6 +387,27 @@ export class Editor {
     const g = this.overlay.clear();
     const s = 1 / this.stage.viewport.scale.x;
 
+    // Wire being drawn.
+    const d = this.drag;
+    if (d?.kind === 'wire') {
+      const a = portWorld(d.from.el, d.from.port);
+      const na = portNormalWorld(d.from.el, d.from.port);
+      const target = this.hoverPort && this.compatible(d.from, this.hoverPort) ? this.hoverPort : null;
+      const b = target ? portWorld(target.el, target.port) : d.pointer;
+      const nb = target ? portNormalWorld(target.el, target.port) : { x: -na.x, y: -na.y };
+      const pts = wireCurve(a, na, b, nb);
+      g.moveTo(pts[0].x, pts[0].y);
+      for (const p of pts.slice(1)) g.lineTo(p.x, p.y);
+      g.stroke({ width: 3 * s, color: target ? SIGNAL_ON : 0xffffff, alpha: 0.85, cap: 'round' });
+      if (target) g.circle(b.x, b.y, 10 * s).stroke({ width: 2 * s, color: SIGNAL_ON });
+    }
+
+    // Port hover ring + label.
+    if (this.hoverPort && d?.kind !== 'wire') {
+      const p = portWorld(this.hoverPort.el, this.hoverPort.port);
+      g.circle(p.x, p.y, 10 * s).stroke({ width: 2 * s, color: 0xffffff, alpha: 0.8 });
+    }
+
     const hover = this.hoverId !== this.store.selectedId ? this.store.get(this.hoverId) : undefined;
     if (hover) {
       const def = getDef(hover.type);
@@ -272,7 +422,7 @@ export class Editor {
     const color = el.locked ? 0xff9a6a : COLORS.accent;
 
     // Dashed selection ring.
-    const dashes = Math.max(24, Math.round((R / s) / 6));
+    const dashes = Math.max(24, Math.round(R / s / 6));
     for (let i = 0; i < dashes; i++) {
       const a0 = (i / dashes) * Math.PI * 2;
       const a1 = a0 + (Math.PI / dashes) * 1.1;
@@ -297,4 +447,12 @@ export class Editor {
         .stroke({ width: 1.6 * s, color });
     }
   }
+}
+
+function distToSegment(p: Vec2, a: Vec2, b: Vec2): number {
+  const dx = b.x - a.x;
+  const dy = b.y - a.y;
+  const l2 = dx * dx + dy * dy || 1;
+  const t = Math.max(0, Math.min(1, ((p.x - a.x) * dx + (p.y - a.y) * dy) / l2));
+  return Math.hypot(p.x - a.x - dx * t, p.y - a.y - dy * t);
 }

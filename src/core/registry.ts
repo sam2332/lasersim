@@ -17,13 +17,17 @@ for (const [path, mod] of Object.entries(modules)) {
   defs.set(def.type, def);
 }
 
-export const CATEGORY_ORDER: Category[] = ['source', 'optic', 'obstacle', 'goal', 'field'];
+export const CATEGORY_ORDER: Category[] = ['source', 'optic', 'photonics', 'io', 'logic', 'obstacle', 'goal', 'field', 'note'];
 export const CATEGORY_LABEL: Record<Category, string> = {
   source: 'Light sources',
   optic: 'Optics',
+  photonics: 'Photonics',
+  io: 'Signals & I/O',
+  logic: 'Logic',
   obstacle: 'Obstacles',
   goal: 'Targets',
   field: 'Space-time',
+  note: 'Annotations',
 };
 
 export function getDef(type: string): ElementDef | undefined {
