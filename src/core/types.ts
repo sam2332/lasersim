@@ -185,8 +185,8 @@ export interface ElementDef<P extends object = any> {
   /** Read-only derived values shown in the inspector. */
   info?(props: P): Record<string, string>;
   rotatable?: boolean;
-  /** Counts toward the "all targets lit" goal. */
-  isGoal?: boolean;
+  /** Makes this a puzzle goal; returns whether it is satisfied by the deposited light. */
+  goalMet?(props: P, energy: number): boolean;
 
   boundsRadius(props: P): number;
   hitTest(props: P, local: Vec2): boolean;
