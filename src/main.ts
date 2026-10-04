@@ -4,6 +4,7 @@ import { settings, settingsEvents } from './core/settings';
 import { Store } from './core/store';
 import { Editor } from './editor/editor';
 import { Simulator } from './logic/simulator';
+import { particleWorld } from './particles/world';
 import { trace, type TraceResult } from './optics/tracer';
 import { presets } from './presets';
 import { scriptHost } from './scripting/host';
@@ -16,6 +17,7 @@ import { ViewManager } from './render/views';
 import { WireRenderer } from './render/wires';
 import { Hud } from './ui/hud';
 import { Inspector } from './ui/inspector';
+import { ParticleTools } from './ui/particle-tools';
 import { mountToolbar } from './ui/toolbar';
 import { ScriptEditor } from './ui/script-editor';
 import { mountTopbar } from './ui/topbar';
@@ -52,6 +54,9 @@ async function main() {
   mountToolbar($('toolbar'), stageHost, editor);
   new Inspector($('sidepanel'), store, editor, fit);
   new ScriptEditor(stageHost, store);
+  const particleTools = new ParticleTools(stageHost, stage, store, editor);
+  particleWorld.sync(store.scene);
+  store.events.on('change', () => particleWorld.sync(store.scene));
 
   // Frame loop: run fixed simulation steps, then re-trace light only when something changed.
   let dirty = true;
@@ -87,6 +92,8 @@ async function main() {
       wires.draw(store.scene, sim.signals(store.scene), store.selectedWireId, stage.viewport.scale.x);
     }
     zoomDirty = false;
+    if (!settings.paused) particleWorld.update(dt, store.scene);
+    particleTools.update(dt);
     views.tick(dt);
     wires.tick(dt);
     fx.update(dt);
@@ -110,7 +117,7 @@ async function main() {
   });
 
   // Handy for debugging and tests from the console.
-  Object.assign(window, { lasersim: { store, stage, sim, presets, scriptHost, settings, trace: () => trace(store.scene, settings, sim.signals(store.scene)) } });
+  Object.assign(window, { lasersim: { store, stage, sim, presets, scriptHost, settings, particleWorld, trace: () => trace(store.scene, settings, sim.signals(store.scene)) } });
 }
 
 main();

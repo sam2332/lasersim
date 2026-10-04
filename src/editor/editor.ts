@@ -1,3 +1,4 @@
+import mitt from 'mitt';
 import { Graphics, type FederatedPointerEvent } from 'pixi.js';
 import { Frame, rad, snapTo, type Vec2 } from '../core/math';
 import { bus } from '../core/bus';
@@ -10,7 +11,7 @@ import type { Stage } from '../render/stage';
 import { COLORS } from '../render/style';
 import { SIGNAL_ON } from '../render/wires';
 
-interface PortRef {
+export interface PortRef {
   el: SceneElement;
   port: Port;
 }
@@ -20,6 +21,16 @@ type Drag =
   | { kind: 'rotate'; id: string }
   | { kind: 'handle'; id: string; handle: Handle<Props> }
   | { kind: 'wire'; from: PortRef; pointer: Vec2 };
+
+/** Lets a tool (e.g. a particle brush) claim pointer gestures before normal editing. */
+export interface PointerInterceptor {
+  /** Return true to take over this gesture. */
+  down(world: Vec2, e: FederatedPointerEvent): boolean;
+  move(world: Vec2, e: FederatedPointerEvent): void;
+  up(): void;
+  /** Pointer moved with no gesture in progress (for brush cursors). */
+  hover?(world: Vec2): void;
+}
 
 export interface EditorRuntime {
   /** Send a momentary pulse to an element (push buttons). */
@@ -35,6 +46,8 @@ const ROTATE_GAP = 26;
  * draw wires between ports, and shortcuts.
  */
 export class Editor {
+  /** Hover feedback for UI add-ons (e.g. port tooltips). */
+  readonly events = mitt<{ 'port-hover': PortRef | null }>();
   private overlay = new Graphics();
   private drag: Drag | null = null;
   private downAt: Vec2 | null = null;
@@ -42,6 +55,8 @@ export class Editor {
   private hoverPort: PortRef | null = null;
   private shift = false;
   private lastClick = { id: '', time: 0 };
+  private interceptors: PointerInterceptor[] = [];
+  private intercepting: PointerInterceptor | null = null;
 
   constructor(
     private readonly stage: Stage,
@@ -59,6 +74,10 @@ export class Editor {
     window.addEventListener('keyup', (e) => (this.shift = e.shiftKey));
     store.events.on('change', () => this.redraw());
     store.events.on('select', () => this.redraw());
+  }
+
+  addInterceptor(i: PointerInterceptor): void {
+    this.interceptors.push(i);
   }
 
   /** Add an element (from the toolbar). Defaults to the centre of the current view. */
@@ -80,6 +99,14 @@ export class Editor {
     this.shift = e.shiftKey;
     const w = this.stage.viewport.toWorld(e.global);
     this.downAt = { x: e.global.x, y: e.global.y };
+
+    for (const i of this.interceptors) {
+      if (i.down(w, e)) {
+        this.intercepting = i;
+        this.stage.viewport.plugins.pause('drag');
+        return;
+      }
+    }
 
     const sel = this.store.selected;
     if (sel && !sel.locked) {
@@ -116,12 +143,18 @@ export class Editor {
   private onMove(e: FederatedPointerEvent): void {
     this.shift = e.shiftKey;
     const w = this.stage.viewport.toWorld(e.global);
+    if (this.intercepting) {
+      this.intercepting.move(w, e);
+      return;
+    }
+    for (const i of this.interceptors) i.hover?.(w);
     if (!this.drag) {
       const sel = this.store.selected;
       const overHandle = sel && !sel.locked && this.handleAt(sel, w);
       const port = this.portAt(w);
       const hover = port ? undefined : this.elementAt(w);
       if ((hover?.id ?? null) !== this.hoverId || port?.port !== this.hoverPort?.port) {
+        if (port?.port !== this.hoverPort?.port) this.events.emit('port-hover', port);
         this.hoverId = hover?.id ?? null;
         this.hoverPort = port;
         this.redraw();
@@ -135,7 +168,9 @@ export class Editor {
     const d = this.drag;
     if (d.kind === 'wire') {
       d.pointer = w;
-      this.hoverPort = this.portAt(w);
+      const port = this.portAt(w);
+      if (port?.port !== this.hoverPort?.port) this.events.emit('port-hover', port);
+      this.hoverPort = port;
       this.redraw();
       return;
     }
@@ -160,6 +195,13 @@ export class Editor {
   }
 
   private onUp(): void {
+    if (this.intercepting) {
+      this.intercepting.up();
+      this.intercepting = null;
+      this.stage.viewport.plugins.resume('drag');
+      this.downAt = null;
+      return;
+    }
     const d = this.drag;
     const wasClick = this.downAt && !d;
     if (d) {

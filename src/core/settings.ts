@@ -13,6 +13,8 @@ export interface Settings {
   /** Logic simulation steps per second. */
   simRate: number;
   paused: boolean;
+  /** Molecular-dynamics time units simulated per real second. */
+  particleSpeed: number;
 }
 
 const KEY = 'lasersim.settings';
@@ -25,6 +27,7 @@ const DEFAULTS: Settings = {
   particles: true,
   simRate: 20,
   paused: false,
+  particleSpeed: 40,
 };
 
 function load(): Settings {

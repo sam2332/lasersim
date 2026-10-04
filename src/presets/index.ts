@@ -1,6 +1,6 @@
 import type { Scene } from '../core/types';
 
-export type PresetGroup = 'Optics' | 'Photonics' | 'Logic & signals' | 'Sandbox';
+export type PresetGroup = 'Optics' | 'Photonics' | 'Logic & signals' | 'Matter & particles' | 'Sandbox';
 
 export interface Preset {
   id: string;
@@ -20,4 +20,4 @@ export const presets: Preset[] = Object.values(modules)
 
 export const getPreset = (id: string) => presets.find((p) => p.id === id);
 
-export const PRESET_GROUPS: PresetGroup[] = ['Optics', 'Photonics', 'Logic & signals', 'Sandbox'];
+export const PRESET_GROUPS: PresetGroup[] = ['Optics', 'Photonics', 'Logic & signals', 'Matter & particles', 'Sandbox'];

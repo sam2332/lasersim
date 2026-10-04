@@ -17,13 +17,14 @@ for (const [path, mod] of Object.entries(modules)) {
   defs.set(def.type, def);
 }
 
-export const CATEGORY_ORDER: Category[] = ['source', 'optic', 'photonics', 'io', 'logic', 'obstacle', 'goal', 'field', 'note'];
+export const CATEGORY_ORDER: Category[] = ['source', 'optic', 'photonics', 'io', 'logic', 'matter', 'obstacle', 'goal', 'field', 'note'];
 export const CATEGORY_LABEL: Record<Category, string> = {
   source: 'Light sources',
   optic: 'Optics',
   photonics: 'Photonics',
   io: 'Signals & I/O',
   logic: 'Logic',
+  matter: 'Matter & particles',
   obstacle: 'Obstacles',
   goal: 'Targets',
   field: 'Space-time',

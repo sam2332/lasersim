@@ -4,6 +4,8 @@ import mitt from 'mitt';
 export type AppEvents = {
   /** Open the script editor for an element id. */
   'edit-script': string;
+  /** Remove every particle from a chamber. */
+  'clear-chamber': string;
 };
 
 export const bus = mitt<AppEvents>();

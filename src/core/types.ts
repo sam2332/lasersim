@@ -220,7 +220,7 @@ export interface ElementView<P extends object> {
 // Element definition — one per file in src/elements
 // ---------------------------------------------------------------------------
 
-export type Category = 'source' | 'optic' | 'photonics' | 'io' | 'logic' | 'obstacle' | 'goal' | 'field' | 'note';
+export type Category = 'source' | 'optic' | 'photonics' | 'io' | 'logic' | 'matter' | 'obstacle' | 'goal' | 'field' | 'note';
 
 export interface Variant<P> {
   label: string;
@@ -243,7 +243,9 @@ export interface ElementDef<P extends object = any> {
   normalize?(props: P): P;
   params: ParamSpec<P>[];
   /** Read-only derived values shown in the inspector. */
-  info?(props: P): Record<string, string>;
+  info?(props: P, id: string): Record<string, string>;
+  /** Re-read `info` several times a second (values that change on their own, e.g. gas pressure). */
+  liveInfo?: boolean;
   rotatable?: boolean;
   /** Makes this a puzzle goal; returns whether it is currently satisfied (null = not a goal right now). */
   goalMet?(props: P, energy: number, signals: Signals): boolean | null;

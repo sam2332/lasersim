@@ -38,6 +38,11 @@ export class Inspector {
     this.buildSettings(settingsHost, onFit);
     store.events.on('select', () => this.rebuild());
     store.events.on('change', () => this.queueRefresh());
+    // Live values (gas pressure, temperature…) change without scene edits.
+    setInterval(() => {
+      const el = this.store.selected;
+      if (el && getDef(el.type)?.liveInfo) this.queueRefresh();
+    }, 250);
     this.rebuild();
   }
 
@@ -81,7 +86,7 @@ export class Inspector {
     }
 
     if (def.info) {
-      this.info = { ...def.info(el.props) };
+      this.info = { ...def.info(el.props, el.id) };
       const folder = pane.addFolder({ title: 'Optics', expanded: true });
       for (const key of Object.keys(this.info)) folder.addBinding(this.info, key, { readonly: true, label: key });
     }
@@ -147,7 +152,7 @@ export class Inspector {
       const def = getDef(el.type) as ElementDef;
       this.syncing = true;
       Object.assign(this.model, this.toModel(el));
-      if (def.info) Object.assign(this.info, def.info(el.props));
+      if (def.info) Object.assign(this.info, def.info(el.props, el.id));
       this.pane.refresh();
       this.syncing = false;
       this.elementHost.querySelectorAll<HTMLElement>('.spectrum-bar').forEach((bar) => bar.dispatchEvent(new Event('sync')));
@@ -200,7 +205,8 @@ export class Inspector {
     on('fresnel', { label: 'Glass reflections' });
     on('grid', { label: 'Grid' });
     on('particles', { label: 'Particles' });
-    on('simRate', { label: 'Sim speed (Hz)', min: 1, max: 60, step: 1 });
+    on('simRate', { label: 'Sim speed (Hz)', min: 1, max: 300, step: 1 });
+    on('particleSpeed', { label: 'Particle speed', min: 2, max: 200, step: 1 });
     pane.addButton({ title: 'Fit board to view' }).on('click', onFit);
   }
 }
