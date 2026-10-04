@@ -101,8 +101,8 @@ const gate: ElementDef<GateProps> = {
   boundsRadius: (p) => Math.max(OUT_X, height(p) / 2) + 2,
   hitTest: (p, l) => l.x >= -30 && l.x <= 32 && Math.abs(l.y) <= height(p) / 2 + 2,
   ports: (p): Port[] => [
-    ...portColumn(INPUT_IDS.slice(0, count(p)), 'in', IN_X, Math.min(16, (height(p) - 12) / Math.max(1, count(p) - 1))),
-    { id: 'out', dir: 'out', position: { x: OUT_X, y: 0 }, normal: { x: 1, y: 0 } },
+    ...portColumn(INPUT_IDS.slice(0, count(p)), 'in', IN_X, Math.min(16, (height(p) - 12) / Math.max(1, count(p) - 1)), ['input A', 'input B', 'input C', 'input D']),
+    { id: 'out', dir: 'out', position: { x: OUT_X, y: 0 }, normal: { x: 1, y: 0 }, label: `${p.op} output` },
   ],
   logic: ({ props, inputs, state }) => {
     const value = evaluate(props.op, INPUT_IDS.slice(0, count(props)).map((id) => !!inputs[id]));

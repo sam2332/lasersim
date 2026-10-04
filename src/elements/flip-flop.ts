@@ -23,6 +23,7 @@ const INPUTS: Record<Mode, string[]> = {
 };
 
 const NAMES: Record<string, string> = { d: 'D', clk: '▷', s: 'S', r: 'R', j: 'J', k: 'K' };
+const PIN_LABELS: Record<string, string> = { d: 'D (data)', clk: 'clock (rising edge)', s: 'S (set)', r: 'R (reset)', j: 'J (set)', k: 'K (reset)' };
 
 const inputY = (ids: string[], i: number) => (i - (ids.length - 1) / 2) * 20;
 
@@ -47,9 +48,9 @@ const flipFlop: ElementDef<FlipFlopProps> = {
   boundsRadius: () => Math.hypot(W, H) / 2 + 4,
   hitTest: (_p, l) => Math.abs(l.x) <= W / 2 + 2 && Math.abs(l.y) <= H / 2 + 2,
   ports: (p): Port[] => [
-    ...INPUTS[p.mode].map((id, i): Port => ({ id, dir: 'in', position: { x: IN_X, y: inputY(INPUTS[p.mode], i) }, normal: { x: -1, y: 0 } })),
-    { id: 'q', dir: 'out', position: { x: OUT_X, y: -14 }, normal: { x: 1, y: 0 } },
-    { id: 'nq', dir: 'out', position: { x: OUT_X, y: 14 }, normal: { x: 1, y: 0 } },
+    ...INPUTS[p.mode].map((id, i): Port => ({ id, dir: 'in', position: { x: IN_X, y: inputY(INPUTS[p.mode], i) }, normal: { x: -1, y: 0 }, label: PIN_LABELS[id] })),
+    { id: 'q', dir: 'out', position: { x: OUT_X, y: -14 }, normal: { x: 1, y: 0 }, label: 'Q (stored bit)' },
+    { id: 'nq', dir: 'out', position: { x: OUT_X, y: 14 }, normal: { x: 1, y: 0 }, label: 'Q̄ (inverted)' },
   ],
   logic: ({ props, inputs, state }) => {
     let q: boolean = state.q ?? false;

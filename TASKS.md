@@ -40,6 +40,18 @@ Order = priority (best first). The particle chamber comes first by request.
 - [ ] Move simulation into a Web Worker for 20k+ particles
   - Deferred: main thread handles 3 chambers × 420 molecules in ~3 ms/frame; revisit when scenes need >5k particles
 
+### Phase 2b: combustion (requested)
+- [x] Flammable species (H₂, CH₄, CO, CH₂O) + radicals (H, O, OH, CH₃, HCO) with real heats of formation
+- [x] Collision-driven reactions: line-of-centres energy > Ea (Arrhenius emerges); H₂/O₂ radical chain with branching + 3-body recombination; reduced CH₄ → CH₃ → CH₂O → HCO → CO → CO₂
+- [x] Momentum/energy conserving products; mass-balance check on every reaction (all pass)
+- [x] Spark: plasma dissociation (O₂ → 2O, H₂ → 2H, …) + heating; spark brush tool; wireable spark-plug input (rising edge)
+- [x] Flame rendering: hot molecules glow with blackbody colour, radicals glow, spark arc flash
+- [x] Calibration: barriers ×0.25 (time-scale compression; selectable ×0.5 / ×1) and 30% translational heat share → H₂/O₂ flames ~3000–4000 K
+  - Verified: unsparked H₂/O₂ and CH₄/O₂ never react; sparked H₂/O₂ burns ~90% to water; ignition is probabilistic (~75% per spark), as near real minimum ignition energy
+- [x] Presets: Hydrogen–Oxygen Ignition, Methane in Air
+- [ ] Spark-ignition engine preset (intake/compress/spark/exhaust cycle with clock + piston)
+- [ ] HO₂ chemistry (would complete HCO + O₂ and high-pressure H₂ chemistry)
+
 ### Phase 3: light ↔ matter
 - [ ] Beams scatter in gas (visible beams, Rayleigh ∝ 1/λ⁴)
 - [ ] Gas absorbs light by species → heating
@@ -50,6 +62,50 @@ Order = priority (best first). The particle chamber comes first by request.
 ### Phase 4: instruments for matter
 - [ ] Speed histogram with Maxwell–Boltzmann overlay
 - [ ] PV diagram plotter
+
+## UI polish
+- [x] Port tooltips (part · pin name, live ON/OFF, what it is wired to, wiring hint) + readable pin names everywhere
+
+## A. Material sandbox (macro scale, Powder-Toy style) — foundation for city + plant
+Decided with user: city is drawn in solid materials so an accident can melt it.
+- [ ] Resizable "material field" element: cell grid (≈4 px cells) rendered as a GPU texture, nearest-neighbour + heat glow
+- [ ] Materials with real data: phase, density, melting/boiling point, heat capacity, conductivity (steel, concrete, brick, glass, copper, aluminium, wood, sand, water, steam, lava, air, smoke, fire)
+- [ ] Movement rules: fixed solids (structures), powders fall/pile, liquids flow/level, gases rise/diffuse
+- [ ] Heat conduction between cells; phase changes with latent heat (melt, freeze, boil, condense)
+- [ ] Combustion at macro scale (wood/fuel + air → fire → smoke), ignition from sparks/hot cells
+- [ ] Pressure field + explosions (overpressure pushes/destroys cells, flings debris)
+- [ ] Brushes: draw/erase/heat/cool/explode with material picker (reuse particle toolbar)
+- [ ] Light interaction: beams heat absorbing cells; glass transmits; metals reflect
+- [ ] Presets: melting steel with a laser, building collapse, water tower, forest fire
+
+## B. Analog signals + power network
+- [ ] Wires carry numbers (digital = 0/1); gauges/meters; analog-aware gates and chips
+- [ ] Power lines carrying MW between generators, substations and loads
+
+## C. Nuclear reactor (both levels) — PWR, BWR, RBMK and build-from-parts
+- [ ] Neutron particles in the material field: fast/thermal energy groups, scattering, absorption, fission
+- [ ] Nuclear materials with real cross-sections: UO₂ (U-235 enrichment), water, heavy water, graphite, B₄C/Cd control rods, Zircaloy cladding, steel
+- [ ] Fission: ν ≈ 2.43 prompt neutrons, 200 MeV heat → cell temperature; delayed neutrons (6 groups, β = 0.0065)
+- [ ] Wireable control rods (insertion %), SCRAM; rod tip effect for RBMK
+- [ ] Feedback: Doppler (fuel temp), moderator temperature/void (negative for PWR/BWR, positive void for RBMK)
+- [ ] Xenon-135 / Iodine-135 poisoning; decay heat after shutdown
+- [ ] Plant-level panel: point-kinetics readouts (k_eff, period, reactivity in $), pressures, temperatures, alarms
+- [ ] Coolant loops, pumps, steam generator / boiling, turbine + generator element → MW output
+- [ ] Accidents emerge from physics: loss of coolant → overheating → cladding/fuel melt (corium) → steam explosion / hydrogen
+- [ ] Presets: PWR, BWR, RBMK (incl. accident scenario), build-your-own core
+
+## D. City + grid
+- [ ] City districts drawn in materials with load blocks (homes, factories, hospital) and day/night demand
+- [ ] Grid frequency (supply vs demand), substations, transmission lines, blackouts
+- [ ] Other generators: gas/hydrogen burners (combustion), solar from light, batteries
+
+## E. Atoms, electrons and light
+- [ ] Periodic table 1–118 (prebuilt data module): mass, electron configuration, ionization energies
+- [ ] Atom element: spawn by atomic number, Bohr-shell view, ions
+- [ ] Real visible line spectra for common elements (H Balmer, He, Na D, Ne, Hg, Li, K, Ca, Sr, Ba, Cu, Ar, Kr, Xe…)
+- [ ] Absorption/emission: beams lose their resonant lines, excited atoms glow their characteristic colours
+- [ ] Photoionization: photon energy > ionization energy → ion + free electron
+- [ ] Lasers from atoms: energy levels, pumping, population inversion, stimulated emission (He-Ne, ruby)
 
 ## 1. Wave optics (coherence, phase, interference)
 - [ ] Track optical path length → phase per ray

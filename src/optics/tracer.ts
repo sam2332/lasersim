@@ -71,6 +71,10 @@ export function trace(scene: Scene, settings: OpticsSettings, signals?: Map<stri
     }
   }
 
+  const media = scene.elements.flatMap((el) => {
+    const def = getDef(el.type);
+    return def?.medium ? [{ el, medium: def.medium }] : [];
+  });
   const result: TraceResult = { paths: [], glints: [], energy: new Map(), fields };
   const deposit = (id: string, amount: number) => result.energy.set(id, (result.energy.get(id) ?? 0) + amount);
 
@@ -104,6 +108,35 @@ export function trace(scene: Scene, settings: OpticsSettings, signals?: Map<stri
       const stepLen = fields.length ? marchStep(o, fields) : Infinity;
       const toEdge = exitBoard(o, d, W, H);
       const hit = nearestHit(o, d, Math.min(stepLen, toEdge));
+
+      // Volumes (material fields): the first non-transparent cell along the way.
+      if (media.length) {
+        let limit = hit ? hit.t : Math.min(stepLen, toEdge);
+        let best: { el: SceneElement; medium: (typeof media)[number]['medium']; h: NonNullable<ReturnType<(typeof media)[number]['medium']['trace']>> } | null = null;
+        for (const m of media) {
+          const h = m.medium.trace(m.el, o, d, limit);
+          if (h && h.t <= limit) {
+            limit = h.t;
+            best = { el: m.el, medium: m.medium, h };
+          }
+        }
+        if (best) {
+          const point = { x: o.x + d.x * best.h.t, y: o.y + d.y * best.h.t };
+          path.points.push(point);
+          result.glints.push({ point, wavelength: ray.wavelength, intensity: ray.intensity });
+          if (best.h.kind === 'absorb') best.medium.absorb(best.el, best.h.cell, ray.intensity);
+          else if (ray.depth < LIMITS.bounces) {
+            const n = best.h.normal;
+            const k = 2 * (d.x * n.x + d.y * n.y);
+            const dir = { x: d.x - k * n.x, y: d.y - k * n.y };
+            const intensity = ray.intensity * best.medium.reflectivity;
+            if (intensity >= LIMITS.minIntensity) {
+              queue.push({ origin: { x: point.x + dir.x * NUDGE, y: point.y + dir.y * NUDGE }, dir, wavelength: ray.wavelength, intensity, pol: ray.pol, depth: ray.depth + 1 });
+            }
+          }
+          break;
+        }
+      }
 
       if (hit) {
         path.points.push(hit.point);

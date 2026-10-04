@@ -20,6 +20,16 @@ interface Props extends ChamberProps {
   tLimit: number;
 }
 
+/** Approximate blackbody colour for a temperature in K (flame / ember colours). */
+function blackbody(T: number): number {
+  const t = T / 100;
+  const r = t <= 66 ? 255 : 329.7 * Math.pow(t - 60, -0.1332);
+  const g = t <= 66 ? 99.47 * Math.log(t) - 161.12 : 288.12 * Math.pow(t - 60, -0.0755);
+  const b = t >= 66 ? 255 : t <= 19 ? 0 : 138.52 * Math.log(t - 10) - 305.04;
+  const c = (v: number) => Math.round(clamp(v, 0, 255));
+  return (c(r) << 16) | (c(g) << 8) | c(b);
+}
+
 /** Map speed relative to the thermal speed onto a blue → white → red ramp. */
 function speedColor(v: number): number {
   const t = clamp(v / 2.2, 0, 1);
@@ -33,6 +43,7 @@ const portsFor = (p: Props): Port[] => [
   { id: 'vent', dir: 'in', position: { x: -p.width / 2 - 14, y: -12 }, normal: { x: -1, y: 0 }, label: 'vent' },
   { id: 'inlet', dir: 'in', position: { x: -p.width / 2 - 14, y: 12 }, normal: { x: -1, y: 0 }, label: 'gas inlet' },
   { id: 'piston', dir: 'in', position: { x: -p.width / 2 - 14, y: 36 }, normal: { x: -1, y: 0 }, label: 'piston' },
+  { id: 'ignite', dir: 'in', position: { x: -p.width / 2 - 14, y: 60 }, normal: { x: -1, y: 0 }, label: 'spark plug (fires on rising edge)' },
   { id: 'overP', dir: 'out', position: { x: p.width / 2 + 14, y: -14 }, normal: { x: 1, y: 0 }, label: 'pressure > limit' },
   { id: 'hot', dir: 'out', position: { x: p.width / 2 + 14, y: 14 }, normal: { x: 1, y: 0 }, label: 'temperature > limit' },
 ];
@@ -69,6 +80,10 @@ const chamber: ElementDef<Props> = {
     inletSpecies: 'n2',
     inletRate: 40,
     inletT: 293,
+    chemistry: true,
+    barrierScale: 0.25,
+    plugX: 0.14,
+    plugY: 0.5,
     pLimit: 40,
     tLimit: 400,
     colorMode: 'species',
@@ -101,6 +116,10 @@ const chamber: ElementDef<Props> = {
     { kind: 'number', key: 'inletT', label: 'Inlet temperature (K)', min: 1, max: 3000, step: 1 },
     { kind: 'select', key: 'walls', label: 'Walls', options: { 'Steel (opaque)': 'steel', 'Glass (light passes)': 'glass' } },
     { kind: 'select', key: 'colorMode', label: 'Colour by', options: { Species: 'species', 'Speed (thermal)': 'speed' } },
+    { kind: 'boolean', key: 'chemistry', label: 'Chemistry (combustion)' },
+    { kind: 'select', key: 'barrierScale', label: 'Reaction speed', options: { 'Fast (barriers ×0.25)': 0.25, 'Medium (×0.5)': 0.5, 'Realistic (×1, very slow)': 1 } },
+    { kind: 'number', key: 'plugX', label: 'Spark plug X', min: 0.02, max: 0.98, step: 0.01 },
+    { kind: 'number', key: 'plugY', label: 'Spark plug Y', min: 0.02, max: 0.98, step: 0.01 },
     { kind: 'number', key: 'pLimit', label: 'Pressure limit (atm)', min: 0, max: 2000, step: 1 },
     { kind: 'number', key: 'tLimit', label: 'Temperature limit (K)', min: 0, max: 5000, step: 1 },
     { kind: 'number', key: 'width', label: 'Width', min: 80, max: 1700, step: 1 },
@@ -112,8 +131,10 @@ const chamber: ElementDef<Props> = {
       .map((c, i) => (c ? `${SPECIES[i].formula} ${c}` : ''))
       .filter(Boolean)
       .join(', ');
+    const sim = particleWorld.get(id);
     return {
       Particles: String(s.n),
+      Reactions: sim ? `${sim.reactions} (heat ${(sim.heatReleased / 120.27 / 1000).toFixed(1)} MJ/mol-eq)` : '0',
       Temperature: `${s.temperature.toFixed(1)} K`,
       Pressure: s.n ? `${s.pressureAtm.toFixed(2)} atm` : 'vacuum',
       Contents: mix || '—',
@@ -127,7 +148,10 @@ const chamber: ElementDef<Props> = {
   handles: (p) => [{ id: 'corner', position: { x: p.width / 2, y: p.height / 2 }, drag: (_p, l) => ({ width: Math.abs(l.x) * 2, height: Math.abs(l.y) * 2 }) }],
   ports: portsFor,
   surfaces: (p): Surface[] => (p.walls === 'steel' ? rectSurfaces(p.width, p.height, absorber) : []),
-  logic: ({ id, props, inputs, wired }) => {
+  logic: ({ id, props, inputs, wired, state }) => {
+    // Spark plug fires once per rising edge.
+    if (inputs.ignite && !state.ignite) particleWorld.spark(id, (props.plugX ?? 0.08) * (props.width - 2 * WALL), (props.plugY ?? 0.5) * (props.height - 2 * WALL));
+    state.ignite = !!inputs.ignite;
     particleWorld.setInputs(id, { heat: !!inputs.heat, vent: !!inputs.vent, inlet: !!inputs.inlet, piston: !!inputs.piston, pistonWired: !!wired.piston });
     const s = particleWorld.stats(id);
     return { overP: s.n > 0 && s.pressureAtm > props.pLimit, hot: s.n > 0 && s.temperature > props.tLimit };
@@ -137,6 +161,12 @@ const chamber: ElementDef<Props> = {
     const particles = new ParticleContainer({ dynamicProperties: { position: true, color: true } });
     const pistonG = new Graphics();
     let pistonKey = '';
+    // Hot molecules glow like a flame (blackbody colour); sparks flash.
+    const glows = new ParticleContainer({ dynamicProperties: { position: true, color: true, vertex: true } });
+    glows.blendMode = 'add';
+    const flash = new Graphics();
+    flash.blendMode = 'add';
+    let glowPool: Particle[] = [];
     const label = makeLabel(10, 0xaab6cc);
     label.anchor.set(0, 0.5);
     let pool: Particle[] = [];
@@ -175,11 +205,21 @@ const chamber: ElementDef<Props> = {
         led(g, W / 2 - 14, -H / 2 + 5, !!state.signals.outputs.overP, 0xff5a5a, 2.2);
         led(g, W / 2 - 24, -H / 2 + 5, !!state.signals.outputs.hot, 0xffb347, 2.2);
         particles.position.set(-W / 2 + WALL, -H / 2 + WALL);
+        glows.position.set(-W / 2 + WALL, -H / 2 + WALL);
+        flash.position.set(-W / 2 + WALL, -H / 2 + WALL);
+        // Spark plug electrodes.
+        const px = -W / 2 + WALL + (p.plugX ?? 0.08) * (W - 2 * WALL);
+        const py = -H / 2 + WALL + (p.plugY ?? 0.5) * (H - 2 * WALL);
+        if (state.signals.wired.ignite) {
+          g.rect(-W / 2, py - 2, px - 4 - -W / 2, 4).fill({ fill: metalGradient() });
+          g.circle(px - 4, py, 3).fill(0xd8dee9);
+          g.circle(px + 4, py, 2).fill(0xd8dee9);
+        }
         label.position.set(-W / 2 + 14, -H / 2 + 22);
         drawn = true;
       },
       {
-        setup: (root) => root.addChild(particles, pistonG, label),
+        setup: (root) => root.addChild(particles, glows, flash, pistonG, label),
         tick: (_dt, el) => {
           const sim = particleWorld.get(el.id);
           if (!sim || !drawn) return;
@@ -210,6 +250,55 @@ const chamber: ElementDef<Props> = {
             }
           }
           particles.update();
+
+          // Flame glow for molecules hotter than ~1200 K (per-molecule kinetic temperature).
+          let used = 0;
+          for (let i = 0; i < sim.n; i++) {
+            const s = sim.sp[i];
+            const ti = 0.5 * SPECIES_MASS[s] * (sim.vx[i] ** 2 + sim.vy[i] ** 2);
+            const radical = SPECIES[s].radical;
+            if (ti < 1200 && !radical) continue;
+            let gp = glowPool[used];
+            if (!gp) {
+              gp = new Particle({ texture: textures.glow, anchorX: 0.5, anchorY: 0.5 });
+              glowPool.push(gp);
+              glows.addParticle(gp);
+            }
+            gp.x = sim.x[i];
+            gp.y = sim.y[i];
+            const heat = Math.min(1, (ti - 1200) / 4000);
+            const size = (radical ? 26 : 18 + 30 * heat) / 256;
+            gp.scaleX = gp.scaleY = size;
+            gp.tint = radical && ti < 1200 ? SPECIES[s].color : blackbody(Math.max(ti, 1200));
+            gp.alpha = radical && ti < 1200 ? 0.35 : 0.25 + 0.6 * heat;
+            used++;
+          }
+          if (glowPool.length > used) {
+            glows.removeParticles(used, glowPool.length);
+            glowPool = glowPool.slice(0, used);
+          }
+          glows.update();
+
+          // Spark flash: a jagged arc that fades over ~0.3 s of sim time.
+          flash.clear();
+          const sp = sim.lastSpark;
+          const age = sp ? sim.time - sp.time : Infinity;
+          if (sp && age < 12) {
+            const k = 1 - age / 12;
+            for (let arc = 0; arc < 3; arc++) {
+              let ax = sp.x;
+              let ay = sp.y;
+              flash.moveTo(ax, ay);
+              const dir = Math.random() * Math.PI * 2;
+              for (let seg = 0; seg < 6; seg++) {
+                ax += Math.cos(dir + (Math.random() - 0.5) * 1.6) * sp.r * 0.25;
+                ay += Math.sin(dir + (Math.random() - 0.5) * 1.6) * sp.r * 0.25;
+                flash.lineTo(ax, ay);
+              }
+            }
+            flash.stroke({ width: 2, color: 0xc8e4ff, alpha: k });
+            flash.circle(sp.x, sp.y, sp.r * (0.4 + 0.6 * (1 - k))).fill({ color: 0x9fd4ff, alpha: 0.25 * k });
+          }
           // Piston plate + rod follow the simulated right wall.
           const W = el.props.width;
           const H = el.props.height;

@@ -28,7 +28,7 @@ const hexDisplay: ElementDef<HexProps> = {
 
   boundsRadius: () => Math.hypot(W, H) / 2,
   hitTest: (_p, l) => Math.abs(l.x) <= W / 2 + 2 && Math.abs(l.y) <= H / 2 + 2,
-  ports: () => portColumn(BITS, 'in', -W / 2 - 12, 18, ['1', '2', '4', '8']),
+  ports: () => portColumn(BITS, 'in', -W / 2 - 12, 18, ['bit 0 (value 1)', 'bit 1 (value 2)', 'bit 2 (value 4)', 'bit 3 (value 8)']),
 
   createView: () =>
     graphicsView<HexProps>((g, p, state) => {

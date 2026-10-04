@@ -118,6 +118,23 @@ export interface Emission {
   pol?: Jones | null;
 }
 
+/** Where a ray stops being transparent inside a volume element (material fields). */
+export interface MediumHit {
+  t: number;
+  normal: Vec2;
+  cell: number;
+  kind: 'absorb' | 'reflect';
+}
+
+/** A volume light can travel through, cell by cell (e.g. the material field). */
+export interface MediumDef {
+  trace(el: SceneElement, o: Vec2, d: Vec2, tMax: number): MediumHit | null;
+  /** Light of `intensity` was absorbed in `cell`. */
+  absorb(el: SceneElement, cell: number, intensity: number): void;
+  /** Fraction kept on reflection. */
+  reflectivity: number;
+}
+
 /** A gravitational field that bends light continuously (black holes). */
 export interface Field {
   strength: number;
@@ -206,6 +223,8 @@ export interface ViewState {
 export interface ViewContext {
   textures: Textures;
   fx: FxSystem;
+  /** Additive, bloomed layer in world coordinates (for glows that must bloom). */
+  light: Container;
 }
 
 export interface ElementView<P extends object> {
@@ -264,6 +283,8 @@ export interface ElementDef<P extends object = any> {
   surfaces?(props: P, signals: Signals): Surface[];
   emit?(props: P, signals: Signals): Emission[];
   field?(props: P): Field;
+  /** Volume that interacts with light cell by cell. */
+  medium?: MediumDef;
 
   /** Wiring ports. */
   ports?(props: P): Port[];

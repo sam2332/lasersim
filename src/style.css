@@ -634,3 +634,54 @@ kbd {
   color: var(--text);
   font: inherit;
 }
+
+/* ------------------------------------------------------------- port tooltip */
+
+.port-tip {
+  position: absolute;
+  max-width: 280px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  border: 1px solid var(--border-strong);
+  background: rgba(12, 15, 22, 0.95);
+  backdrop-filter: blur(8px);
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.5);
+  pointer-events: none;
+  z-index: 5;
+  font-size: 12px;
+}
+
+.port-tip[hidden] {
+  display: none;
+}
+
+.port-tip-head {
+  font-weight: 600;
+  margin-bottom: 2px;
+}
+
+.port-tip-meta {
+  color: var(--muted);
+}
+
+.port-tip-meta .on {
+  color: #3ee8ff;
+  font-weight: 600;
+}
+
+.port-tip-meta .off {
+  color: #8b95a8;
+  font-weight: 600;
+}
+
+.port-tip-links {
+  margin-top: 4px;
+  white-space: pre-line;
+  color: #c4cde0;
+}
+
+.port-tip-hint {
+  margin-top: 4px;
+  color: var(--muted);
+  font-size: 11px;
+}

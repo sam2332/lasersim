@@ -28,7 +28,7 @@ export interface PlateOptions<P extends PlateProps> extends Omit<ElementDef<P>, 
 export const lengthParam = <P extends PlateProps>(): ParamSpec<P> => ({ kind: 'number', key: 'length' as keyof P & string, label: 'Length', min: 20, max: 600, step: 1 });
 
 /** Control input port below the plate. */
-export const controlPort = (length: number): Port => ({ id: 'ctrl', dir: 'in', position: { x: 0, y: length / 2 + 14 }, normal: { x: 0, y: 1 }, label: 'control' });
+export const controlPort = (length: number): Port => ({ id: 'ctrl', dir: 'in', position: { x: 0, y: length / 2 + 14 }, normal: { x: 0, y: 1 }, label: 'control (ON = active)' });
 
 /** Whether a controlled element is active (unwired = active). */
 export const powered = (sig: Signals, invert = false): boolean => {

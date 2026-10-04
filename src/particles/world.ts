@@ -21,6 +21,13 @@ export interface ChamberProps {
   /** Particles per second while the inlet input is ON. */
   inletRate: number;
   inletT: number;
+  /** Molecules react when they collide hard enough (combustion). */
+  chemistry: boolean;
+  /** Activation-energy multiplier: 0.25 = fast (default), 1 = textbook. */
+  barrierScale: number;
+  /** Spark plug position as fractions of the interior. */
+  plugX: number;
+  plugY: number;
   /** Initial contents when there is no snapshot: [{ species, count, T, region? }]. */
   fill: FillSpec[];
   /** Compact particle snapshot (positions + species). */
@@ -56,6 +63,9 @@ interface Inputs {
   piston: boolean;
   pistonWired: boolean;
 }
+
+/** Spark temperature and radius for plugs and the spark brush. */
+export const SPARK_T = 4000;
 
 interface Runtime {
   sim: ParticleSim;
@@ -113,6 +123,16 @@ class ParticleWorld {
   setInputs(id: string, inputs: Inputs): void {
     const rt = this.runtimes.get(id);
     if (rt) rt.inputs = inputs;
+  }
+
+  /** Fire a spark at interior point (x, y), or at the chamber's spark plug. */
+  spark(id: string, x?: number, y?: number, r = 45, el?: SceneElement): void {
+    const rt = this.runtimes.get(id);
+    if (!rt) return;
+    const p = el?.props as unknown as ChamberProps | undefined;
+    const px = x ?? (p ? p.plugX : 0.1) * rt.sim.w;
+    const py = y ?? (p ? p.plugY : 0.5) * rt.sim.h;
+    rt.sim.spark(px, py, r, SPARK_T);
   }
 
   setValve(id: string, open: boolean): void {
@@ -226,6 +246,8 @@ class ParticleWorld {
       vent: inputs.vent,
       thermostat: p.thermostat ? 0.05 : 0,
     };
+    sim.chemistry = p.chemistry ?? true;
+    sim.barrierScale = p.barrierScale ?? 0.25;
     if (!p.piston) sim.pistonTarget = null;
     else {
       const compressed = !inputs.pistonWired || inputs.piston;

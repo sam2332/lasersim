@@ -1,3 +1,4 @@
+import { REACTIONS, REACTION_TABLE, SPARK_DISSOCIATION } from './reactions';
 import { SPECIES, sigmaPx } from './species';
 
 /**
@@ -23,11 +24,13 @@ interface PairTable {
   eps24: Float64Array;
   rc2: Float64Array;
   rmin2: Float64Array;
+  /** Contact distance² at which a reactive pair may react. */
+  react2: Float64Array;
 }
 
 function buildPairs(): PairTable {
   const n = SPECIES.length;
-  const t: PairTable = { sig2: new Float64Array(n * n), eps24: new Float64Array(n * n), rc2: new Float64Array(n * n), rmin2: new Float64Array(n * n) };
+  const t: PairTable = { sig2: new Float64Array(n * n), eps24: new Float64Array(n * n), rc2: new Float64Array(n * n), rmin2: new Float64Array(n * n), react2: new Float64Array(n * n) };
   for (let i = 0; i < n; i++) {
     for (let j = 0; j < n; j++) {
       const s = (sigmaPx(SPECIES[i]) + sigmaPx(SPECIES[j])) / 2;
@@ -37,6 +40,7 @@ function buildPairs(): PairTable {
       t.eps24[k] = 24 * e;
       t.rc2[k] = (CUTOFF * s) ** 2;
       t.rmin2[k] = (MIN_R * s) ** 2;
+      t.react2[k] = (1.1 * s) ** 2;
     }
   }
   return t;
@@ -118,6 +122,33 @@ export class ParticleSim {
   /** Max piston speed, px / t0. */
   pistonSpeed = 0.8;
   private pistonU = 0;
+
+  /** Allow chemical reactions between colliding molecules. */
+  chemistry = true;
+  /**
+   * Multiplier on activation energies. Real flames develop over milliseconds,
+   * this simulation covers nanoseconds and a box far smaller than a real
+   * flame's quenching distance, so barriers are lowered (×0.25 by default) to
+   * compress chemistry into a watchable time. 1 = textbook values. Unsparked
+   * room-temperature mixtures still never react (verified).
+   */
+  barrierScale = 0.25;
+  /**
+   * Share of reaction heat that goes into translation. A 2D point molecule has
+   * only 2 degrees of freedom; real molecules keep much of it in rotation and
+   * vibration (atoms ~all in translation, hot H₂O only ~15%). 0.3 gives
+   * stoichiometric H₂/O₂ flames of ~3000–4000 K, close to real ones.
+   */
+  heatShare = 0.3;
+  /** Reactions fired since creation, and heat they released (K). */
+  reactions = 0;
+  heatReleased = 0;
+  /** Last spark, for drawing a flash. */
+  lastSpark: { x: number; y: number; r: number; time: number } | null = null;
+  private events: number[] = [];
+  private reacted = new Uint8Array(256);
+  private cellW = 1;
+  private cellH = 1;
 
   openings: Opening[] = [];
   /** Particles that left through openings since the caller last drained this. */
@@ -202,6 +233,43 @@ export class ParticleSim {
 
   clear(): void {
     this.n = 0;
+  }
+
+  /**
+   * Electric spark: the plasma breaks molecules into radicals (O₂ → O + O,
+   * H₂ → H + H …) and leaves everything nearby at temperature T.
+   */
+  spark(cx: number, cy: number, r: number, T: number): number {
+    const n0 = this.n;
+    let broken = 0;
+    for (let i = 0; i < n0; i++) {
+      const dx = this.x[i] - cx;
+      const dy = this.y[i] - cy;
+      if (dx * dx + dy * dy > r * r) continue;
+      const parts = SPARK_DISSOCIATION[this.sp[i]];
+      if (parts) {
+        const a = Math.random() * Math.PI * 2;
+        const off = (RADIUS[parts[0]] + RADIUS[parts[1]]) * 0.55;
+        const ox = Math.cos(a) * off;
+        const oy = Math.sin(a) * off;
+        const [px, py] = [this.x[i], this.y[i]];
+        this.sp[i] = parts[0];
+        this.x[i] = px + ox;
+        this.y[i] = py + oy;
+        this.add(parts[1], Math.min(Math.max(px - ox, RADIUS[parts[1]]), this.right - RADIUS[parts[1]]), Math.min(Math.max(py - oy, RADIUS[parts[1]]), this.h - RADIUS[parts[1]]), 0, 0);
+        this.thermalize(this.n - 1, T);
+        broken++;
+      }
+      this.thermalize(i, T);
+    }
+    this.lastSpark = { x: cx, y: cy, r, time: this.time };
+    return broken;
+  }
+
+  private thermalize(i: number, T: number): void {
+    const sd = Math.sqrt(T / MASS[this.sp[i]]);
+    this.vx[i] = gauss() * sd;
+    this.vy[i] = gauss() * sd;
   }
 
   /** Scale thermal motion inside a radius (heat > 1, cool < 1). */
@@ -436,11 +504,14 @@ export class ParticleSim {
     this.ax.fill(0, 0, n);
     this.ay.fill(0, 0, n);
     this.virial = 0;
+    this.events.length = 0;
     // Build the cell list.
     this.cols = Math.max(1, Math.floor(this.w / this.cell));
     this.rows = Math.max(1, Math.floor(this.h / this.cell));
     const cw = this.w / this.cols;
     const ch = this.h / this.rows;
+    this.cellW = cw;
+    this.cellH = ch;
     const cells = this.cols * this.rows;
     if (this.head.length < cells) this.head = new Int32Array(cells);
     this.head.fill(-1, 0, cells);
@@ -479,6 +550,7 @@ export class ParticleSim {
       this.ax[i] /= m;
       this.ay[i] = this.ay[i] / m + g;
     }
+    if (this.events.length) this.react();
   }
 
   private pair(i: number, j: number): void {
@@ -487,6 +559,17 @@ export class ParticleSim {
     let r2 = dx * dx + dy * dy;
     const k = this.sp[i] * NS + this.sp[j];
     if (r2 >= PAIRS.rc2[k]) return;
+    // Chemistry: a head-on collision with more energy along the line of centres than Ea reacts.
+    if (this.chemistry && REACTION_TABLE[k] >= 0 && r2 < PAIRS.react2[k]) {
+      const vr = (this.vx[i] - this.vx[j]) * dx + (this.vy[i] - this.vy[j]) * dy;
+      if (vr < 0) {
+        const mi = MASS[this.sp[i]];
+        const mj = MASS[this.sp[j]];
+        const e = (0.5 * ((mi * mj) / (mi + mj)) * vr * vr) / r2;
+        const rx = REACTION_TABLE[k];
+        if (e > REACTIONS[rx].ea * this.barrierScale) this.events.push(i, j, rx);
+      }
+    }
     if (r2 < PAIRS.rmin2[k]) r2 = PAIRS.rmin2[k];
     const s2 = PAIRS.sig2[k] / r2;
     const s6 = s2 * s2 * s2;
@@ -497,6 +580,117 @@ export class ParticleSim {
     this.ay[i] += f * dy;
     this.ax[j] -= f * dx;
     this.ay[j] -= f * dy;
+  }
+
+  /** Carry out the reactions found during the force sweep (momentum and energy conserving). */
+  private react(): void {
+    if (this.reacted.length < this.n) this.reacted = new Uint8Array(this.x.length);
+    this.reacted.fill(0, 0, this.n);
+    const remove: number[] = [];
+    for (let e = 0; e < this.events.length; e += 3) {
+      let i = this.events[e];
+      let j = this.events[e + 1];
+      const R = REACTIONS[this.events[e + 2]];
+      if (this.reacted[i] || this.reacted[j]) continue;
+      if (this.sp[i] !== R.a) [i, j] = [j, i];
+      const mi = MASS[this.sp[i]];
+      const mj = MASS[this.sp[j]];
+      const M = mi + mj;
+      const cvx = (mi * this.vx[i] + mj * this.vx[j]) / M;
+      const cvy = (mi * this.vy[i] + mj * this.vy[j]) / M;
+      const rvx = this.vx[i] - this.vx[j];
+      const rvy = this.vy[i] - this.vy[j];
+      const erel = 0.5 * ((mi * mj) / M) * (rvx * rvx + rvy * rvy);
+
+      const dh = R.dh * this.heatShare;
+      if (R.products.length === 2) {
+        const [p1, p2] = R.products;
+        const enew = erel - dh;
+        if (enew <= 0) continue;
+        const m1 = MASS[p1];
+        const m2 = MASS[p2];
+        const M2 = m1 + m2;
+        const u = Math.sqrt((2 * enew) / ((m1 * m2) / M2));
+        // Products fly apart like a bounce: reflect the relative velocity about the line of centres.
+        let nx = this.x[i] - this.x[j];
+        let ny = this.y[i] - this.y[j];
+        const nl = Math.hypot(nx, ny) || 1;
+        nx /= nl;
+        ny /= nl;
+        const dot = rvx * nx + rvy * ny;
+        let dx = rvx - 2 * dot * nx;
+        let dy = rvy - 2 * dot * ny;
+        const dl = Math.hypot(dx, dy);
+        if (dl < 1e-9) [dx, dy] = [nx, ny];
+        else [dx, dy] = [dx / dl, dy / dl];
+        this.sp[i] = p1;
+        this.sp[j] = p2;
+        this.vx[i] = cvx + (m2 / M2) * u * dx;
+        this.vy[i] = cvy + (m2 / M2) * u * dy;
+        this.vx[j] = cvx - (m1 / M2) * u * dx;
+        this.vy[j] = cvy - (m1 / M2) * u * dy;
+      } else {
+        // Three-body recombination: a neighbour carries off the bond energy.
+        const m = this.nearestThirdBody(i, j);
+        if (m < 0) continue;
+        const pc = R.products[0];
+        const mc = MASS[pc];
+        this.sp[i] = pc;
+        this.vx[i] = (mi * this.vx[i] + mj * this.vx[j]) / mc;
+        this.vy[i] = (mi * this.vy[i] + mj * this.vy[j]) / mc;
+        const avail = erel - dh;
+        const mm = MASS[this.sp[m]];
+        const M3 = mc + mm;
+        const c3x = (mc * this.vx[i] + mm * this.vx[m]) / M3;
+        const c3y = (mc * this.vy[i] + mm * this.vy[m]) / M3;
+        const wx = this.vx[i] - this.vx[m];
+        const wy = this.vy[i] - this.vy[m];
+        const mu3 = (mc * mm) / M3;
+        const e3 = 0.5 * mu3 * (wx * wx + wy * wy) + avail;
+        const u = Math.sqrt((2 * Math.max(0, e3)) / mu3);
+        let nx = this.x[i] - this.x[m];
+        let ny = this.y[i] - this.y[m];
+        const nl = Math.hypot(nx, ny) || 1;
+        nx /= nl;
+        ny /= nl;
+        this.vx[i] = c3x + (mm / M3) * u * nx;
+        this.vy[i] = c3y + (mm / M3) * u * ny;
+        this.vx[m] = c3x - (mc / M3) * u * nx;
+        this.vy[m] = c3y - (mc / M3) * u * ny;
+        this.reacted[m] = 1;
+        remove.push(j);
+      }
+      this.reacted[i] = 1;
+      this.reacted[j] = 1;
+      this.reactions++;
+      this.heatReleased -= dh;
+    }
+    remove.sort((a, b) => b - a);
+    for (const j of remove) this.removeAt(j);
+  }
+
+  /** Closest molecule to i (other than j) within a few diameters, using the cell list. */
+  private nearestThirdBody(i: number, j: number): number {
+    const cx = Math.min(this.cols - 1, Math.max(0, Math.floor(this.x[i] / this.cellW)));
+    const cy = Math.min(this.rows - 1, Math.max(0, Math.floor(this.y[i] / this.cellH)));
+    let best = -1;
+    let bestD = (2.2 * SIGMA_MAX) ** 2;
+    for (let oy = -1; oy <= 1; oy++) {
+      for (let ox = -1; ox <= 1; ox++) {
+        const nx = cx + ox;
+        const ny = cy + oy;
+        if (nx < 0 || ny < 0 || nx >= this.cols || ny >= this.rows) continue;
+        for (let m = this.head[ny * this.cols + nx]; m !== -1; m = this.next[m]) {
+          if (m === i || m === j || m >= this.n) continue;
+          const d = (this.x[m] - this.x[i]) ** 2 + (this.y[m] - this.y[i]) ** 2;
+          if (d < bestD) {
+            bestD = d;
+            best = m;
+          }
+        }
+      }
+    }
+    return best;
   }
 
   private ensure(capacity: number): void {

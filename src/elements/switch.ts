@@ -25,7 +25,7 @@ const toggle: ElementDef<SwitchProps> = {
 
   boundsRadius: () => W / 2 + 2,
   hitTest: (_p, l) => Math.abs(l.x) <= W / 2 + 2 && Math.abs(l.y) <= H / 2 + 2,
-  ports: () => [{ id: 'out', dir: 'out', position: { x: W / 2 + 10, y: 0 }, normal: { x: 1, y: 0 } }],
+  ports: () => [{ id: 'out', dir: 'out', position: { x: W / 2 + 10, y: 0 }, normal: { x: 1, y: 0 }, label: 'switch state' }],
   logic: ({ props }) => ({ out: props.on }),
 
   createView: () =>

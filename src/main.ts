@@ -4,6 +4,7 @@ import { settings, settingsEvents } from './core/settings';
 import { Store } from './core/store';
 import { Editor } from './editor/editor';
 import { Simulator } from './logic/simulator';
+import { fieldWorld } from './matter/world';
 import { particleWorld } from './particles/world';
 import { trace, type TraceResult } from './optics/tracer';
 import { presets } from './presets';
@@ -17,7 +18,9 @@ import { ViewManager } from './render/views';
 import { WireRenderer } from './render/wires';
 import { Hud } from './ui/hud';
 import { Inspector } from './ui/inspector';
+import { MaterialTools } from './ui/material-tools';
 import { ParticleTools } from './ui/particle-tools';
+import { PortTooltip } from './ui/port-tooltip';
 import { mountToolbar } from './ui/toolbar';
 import { ScriptEditor } from './ui/script-editor';
 import { mountTopbar } from './ui/topbar';
@@ -38,7 +41,7 @@ async function main() {
   const background = new Background(textures);
   const beams = new BeamRenderer(textures.flare);
   const wires = new WireRenderer(textures.glow);
-  const views = new ViewManager(stage.layers.elements, { textures, fx });
+  const views = new ViewManager(stage.layers.elements, { textures, fx, light: stage.layers.light });
   stage.layers.background.addChild(background.root, wires.under);
   stage.layers.light.addChild(beams.root, wires.glow, fx.root);
   stage.layers.overlay.addChild(wires.over);
@@ -55,8 +58,14 @@ async function main() {
   new Inspector($('sidepanel'), store, editor, fit);
   new ScriptEditor(stageHost, store);
   const particleTools = new ParticleTools(stageHost, stage, store, editor);
+  const materialTools = new MaterialTools(stageHost, stage, store, editor);
+  new PortTooltip(stageHost, stage, store, editor, () => sim.signals(store.scene));
   particleWorld.sync(store.scene);
-  store.events.on('change', () => particleWorld.sync(store.scene));
+  fieldWorld.sync(store.scene);
+  store.events.on('change', () => {
+    particleWorld.sync(store.scene);
+    fieldWorld.sync(store.scene);
+  });
 
   // Frame loop: run fixed simulation steps, then re-trace light only when something changed.
   let dirty = true;
@@ -86,6 +95,9 @@ async function main() {
       }
     }
 
+    // Material fields evolve on their own; light must follow what moves/melts.
+    if (!settings.paused && fieldWorld.any && fieldWorld.update(dt)) dirty = true;
+
     if (dirty) refresh();
     else if (zoomDirty && lastResult) {
       beams.draw(lastResult, stage.viewport.scale.x);
@@ -94,6 +106,7 @@ async function main() {
     zoomDirty = false;
     if (!settings.paused) particleWorld.update(dt, store.scene);
     particleTools.update(dt);
+    materialTools.update(dt);
     views.tick(dt);
     wires.tick(dt);
     fx.update(dt);
@@ -103,6 +116,7 @@ async function main() {
     dirty = false;
     const signals = sim.signals(store.scene);
     const result = (lastResult = trace(store.scene, settings, signals));
+    fieldWorld.commitBeams();
     background.update(store.scene.board, result.fields);
     beams.draw(result, stage.viewport.scale.x);
     wires.draw(store.scene, signals, store.selectedWireId, stage.viewport.scale.x);
@@ -117,7 +131,7 @@ async function main() {
   });
 
   // Handy for debugging and tests from the console.
-  Object.assign(window, { lasersim: { store, stage, sim, presets, scriptHost, settings, particleWorld, trace: () => trace(store.scene, settings, sim.signals(store.scene)) } });
+  Object.assign(window, { lasersim: { store, stage, sim, presets, scriptHost, settings, particleWorld, fieldWorld, trace: () => trace(store.scene, settings, sim.signals(store.scene)) } });
 }
 
 main();

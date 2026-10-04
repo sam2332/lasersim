@@ -42,7 +42,7 @@ const detector: ElementDef<DetectorProps> = {
 
   boundsRadius: () => Math.hypot(W, H) / 2,
   hitTest: (_p, l) => Math.abs(l.x) <= W / 2 + 2 && Math.abs(l.y) <= H / 2 + 2,
-  ports: () => [{ id: 'out', dir: 'out', position: { x: W / 2 + 10, y: 0 }, normal: { x: 1, y: 0 } }],
+  ports: () => [{ id: 'out', dir: 'out', position: { x: W / 2 + 10, y: 0 }, normal: { x: 1, y: 0 }, label: 'light detected' }],
   surfaces: (p): Surface[] => {
     const window = p.colorMatch ? colorSensor(p.wavelength, 30) : sensor;
     return [

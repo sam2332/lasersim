@@ -34,7 +34,7 @@ const lamp: ElementDef<LampProps> = {
 
   boundsRadius: () => R + 4,
   hitTest: (_p, l) => Math.hypot(l.x, l.y) <= R + 4,
-  ports: () => [{ id: 'in', dir: 'in', position: { x: -R - 12, y: 0 }, normal: { x: -1, y: 0 } }],
+  ports: () => [{ id: 'in', dir: 'in', position: { x: -R - 12, y: 0 }, normal: { x: -1, y: 0 }, label: 'lamp power' }],
 
   createView: ({ textures }) => {
     let glow: Sprite;

@@ -1,5 +1,5 @@
 import { Graphics } from 'pixi.js';
-import { Eraser, Flame, MousePointer2, Snowflake, Sparkles, Wind, type IconNode } from 'lucide';
+import { Eraser, Flame, MousePointer2, Snowflake, Sparkles, Wind, Zap, type IconNode } from 'lucide';
 import { bus } from '../core/bus';
 import type { Vec2 } from '../core/math';
 import type { Store } from '../core/store';
@@ -10,7 +10,7 @@ import { particleWorld, WALL } from '../particles/world';
 import type { Stage } from '../render/stage';
 import { icon } from './icons';
 
-type Tool = 'select' | 'spawn' | 'erase' | 'heat' | 'cool' | 'push';
+type Tool = 'select' | 'spawn' | 'erase' | 'heat' | 'cool' | 'push' | 'spark';
 
 const TOOLS: { id: Tool; label: string; icon: IconNode; color: number }[] = [
   { id: 'select', label: 'Select / move (normal editing)', icon: MousePointer2, color: 0xffffff },
@@ -19,6 +19,7 @@ const TOOLS: { id: Tool; label: string; icon: IconNode; color: number }[] = [
   { id: 'heat', label: 'Heat (speed molecules up)', icon: Flame, color: 0xff9a3c },
   { id: 'cool', label: 'Cool (slow molecules down)', icon: Snowflake, color: 0x6fc8ff },
   { id: 'push', label: 'Push / stir', icon: Wind, color: 0xd8b8ff },
+  { id: 'spark', label: 'Spark (ignite flammable gas: breaks molecules into radicals + heats)', icon: Zap, color: 0x9fd4ff },
 ];
 
 interface Stroke {
@@ -43,6 +44,7 @@ export class ParticleTools {
   private stroke: Stroke | null = null;
   private hoverPoint: Vec2 | null = null;
   private spawnDebt = 0;
+  private sparkTimer = 0;
   private buttons = new Map<Tool, HTMLButtonElement>();
 
   constructor(
@@ -100,6 +102,14 @@ export class ParticleTools {
       case 'cool':
         sim.scaleVelocities(p.x, p.y, r, Math.max(0.5, 1 - 1.2 * dt));
         break;
+      case 'spark':
+        // Hold to keep sparking (more energy → ignites harder-to-light fuels like methane).
+        this.sparkTimer -= dt;
+        if (this.sparkTimer <= 0) {
+          this.sparkTimer = 0.15;
+          particleWorld.spark(s.id, p.x, p.y, Math.min(r, 60));
+        }
+        break;
       case 'push': {
         const dx = s.pointer.x - s.last.x;
         const dy = s.pointer.y - s.last.y;
@@ -118,6 +128,7 @@ export class ParticleTools {
     if (!el) return false;
     this.stroke = { id: el.id, pointer: w, last: w, changed: false };
     this.spawnDebt = 1;
+    this.sparkTimer = 0;
     return true;
   }
 
@@ -180,7 +191,12 @@ export class ParticleTools {
     const species = document.createElement('select');
     species.className = 'preset-select';
     species.title = 'Particle type';
-    species.innerHTML = SPECIES.map((s, i) => `<option value="${i}">${s.formula} · ${s.name}</option>`).join('');
+    const opt = (i: number) => `<option value="${i}">${SPECIES[i].formula} · ${SPECIES[i].name}</option>`;
+    const idx = SPECIES.map((_s, i) => i);
+    species.innerHTML =
+      `<optgroup label="Gases & liquids">${idx.filter((i) => !SPECIES[i].radical && !SPECIES[i].flammable).map(opt).join('')}</optgroup>` +
+      `<optgroup label="Flammable">${idx.filter((i) => SPECIES[i].flammable).map(opt).join('')}</optgroup>` +
+      `<optgroup label="Radicals (short-lived)">${idx.filter((i) => SPECIES[i].radical).map(opt).join('')}</optgroup>`;
     species.value = String(this.species);
     const swatch = document.createElement('span');
     swatch.className = 'swatch';

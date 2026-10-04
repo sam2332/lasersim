@@ -27,7 +27,7 @@ const button: ElementDef<ButtonProps> = {
 
   boundsRadius: () => S / 2 + 3,
   hitTest: (_p, l) => Math.abs(l.x) <= S / 2 + 2 && Math.abs(l.y) <= S / 2 + 2,
-  ports: () => [{ id: 'out', dir: 'out', position: { x: S / 2 + 10, y: 0 }, normal: { x: 1, y: 0 } }],
+  ports: () => [{ id: 'out', dir: 'out', position: { x: S / 2 + 10, y: 0 }, normal: { x: 1, y: 0 }, label: 'pulse' }],
   logic: ({ props, state, time, triggered }) => {
     if (triggered) state.until = time + props.hold;
     return { out: time < (state.until ?? -1) };
