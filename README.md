@@ -1,6 +1,6 @@
 # LaserSim
 
-A 2D light sandbox / puzzle: place lasers, mirrors, lenses, prisms and black holes, bend the light, and ignite every orb.
+A 2D light sandbox / puzzle: place lasers, mirrors, lenses, prisms and black holes, bend the light, and ignite every orb. Wire photodetectors, logic gates and flip-flops to lasers, shutters and switchable mirrors to build optical and electro-optical circuits. The board also covers photonics: polarization, wave plates, gratings, dichroics, amplifiers, isolators and a VR pancake lens.
 
 ```bash
 npm install
@@ -20,8 +20,31 @@ npm run build      # type-check + production build
 | Undo / redo | **Ctrl+Z** / **Ctrl+Shift+Z** |
 | Duplicate / delete | **Ctrl+D** / **Del** |
 | Pan / zoom | Drag empty space / mouse wheel or pinch |
+| Wire | Drag from a port ● (output) to a port ○ (input). Drag a connected input to move or remove its wire |
+| Delete a wire | Click it, then **Del** |
+| Switches / buttons | Click them |
+| Simulation | ⏸ / ▶ / step / reset in the top bar; speed in Settings |
 
 Scenes autosave to the browser. **Share** copies a link with the whole scene encoded in it.
+
+## Programmable chips
+
+The **Microcontroller** (Logic palette) runs your own JavaScript every simulation tick. Double-click a chip, or use **Edit code…** in the inspector, to open the editor. Press **Ctrl+S** to apply.
+
+```js
+state.count = 0;                       // your data; survives between ticks
+
+function onStart(io) { print('hello'); }          // first tick
+function onChange(pin, value, io) {               // an input pin changed
+  if (pin === 0 && value) state.count++;
+}
+function onTick(io) {                             // every tick
+  io.out[0] = io.in[0] && io.in[1];               // pins are booleans
+  io.out[1] = (io.tick % 10) < 5;                 // io.time, io.dt, io.tick
+}
+```
+
+Scripts run in [QuickJS](https://github.com/justjake/quickjs-emscripten), a separate JavaScript engine compiled to WebAssembly. They have no access to the page, the DOM, storage or the network. Each tick has a 30 ms budget and each chip has 16 MB of memory, so a shared scene can't do anything except drive its own pins. If a script throws or runs too long, that chip halts and the console shows the error and line number. The editor's **Templates** menu has starter programs: blink, gates, an edge counter, a scanner, a Morse beacon, and an optical serial transmitter/receiver pair.
 
 ## Libraries
 
@@ -36,13 +59,18 @@ Scenes autosave to the browser. **Share** copies a link with the whole scene enc
 | [canvas-confetti](https://github.com/catdad/canvas-confetti) | Win celebration |
 | [lz-string](https://github.com/pieroxy/lz-string) | Compressing scenes into share links |
 | [mitt](https://github.com/developit/mitt) | Event emitter for store and settings |
+| [quickjs-emscripten](https://github.com/justjake/quickjs-emscripten) | Sandboxed JavaScript engine for microcontroller scripts |
+| [CodeMirror 6](https://codemirror.net) | Script editor |
 
 ## Project layout
 
 ```
 src/
   core/        scene data, registry, store (undo/redo), settings, persistence
-  optics/      ray tracer, intersections, surface shapes, materials, spectrum, gravity
+  optics/      ray tracer, intersections, surface shapes, materials, spectrum, gravity, polarization (Jones)
+  logic/       signal simulator and port/wire helpers
+  kit/         building blocks for element files (thin optical plates, device drawing)
+  scripting/   sandboxed script host (QuickJS) and chip templates
   render/      Pixi stage, background grid, beams, particles, textures, view manager
   editor/      pointer/keyboard editing and the selection overlay
   ui/          toolbar, inspector, top bar, HUD, toasts
@@ -50,7 +78,9 @@ src/
   presets/     one file per preset board (auto-registered)
 ```
 
-How a frame works: the **store** holds the scene as plain JSON. When the scene changes, the **tracer** rebuilds every beam from the light sources. Each element's own module supplies its surfaces, emitters and gravity fields. Each surface has a **material** (mirror, glass, absorber, sensor, splitter, filter) that decides which rays leave a hit point. The result is drawn by the **beam renderer**, and each element's **view** draws the element itself.
+How a frame works: the **store** holds the scene as plain JSON: elements and wires. When something changes, the **tracer** rebuilds every beam from the light sources. Each element's own module supplies its surfaces, emitters and gravity fields. Each surface has a **material** (mirror, glass, polarizer, wave plate, grating, dichroic, sensor…) that decides which rays leave a hit point. Each ray carries its wavelength, its intensity and a Jones-vector polarization.
+
+The **simulator** runs at a fixed rate (20 Hz by default). On each tick, every element with a `logic` hook reads its wired inputs and the light it received, then writes its outputs. Those outputs feed back into the optics: a laser's enable port, a shutter, a switchable mirror. Every hop costs one tick, so optical feedback loops oscillate and latch like real circuits.
 
 ## Adding a new piece
 
@@ -84,6 +114,7 @@ export default myThing;
 
 Optional hooks:
 
+- `ports` and `logic`: add wiring pins and per-tick behaviour. `surfaces` and `emit` also receive the current signals, so wired inputs can change the optics.
 - `emit`: makes the piece a light source.
 - `field`: makes it bend light, like the black hole does.
 - `handles`: adds draggable reshape handles.
@@ -92,4 +123,6 @@ Optional hooks:
 - `activate`: sets what double-click or Space does.
 - `variants`: adds extra toolbar entries with different starting props.
 
-New light behaviours (portals, polarisers, gratings…) are new **materials** in `src/optics/materials.ts`. A preset board is one file in `src/presets/`.
+For a thin optical plate (a filter, a wave plate and so on), `plate()` in `src/kit/plate.ts` takes care of shape, hit-testing, the resize handle and drawing. The element file only supplies the material; see `src/elements/polarizer.ts`.
+
+New light behaviours are new **materials** in `src/optics/materials.ts`. A preset board is one file in `src/presets/`, and its `wire()` helper connects ports.

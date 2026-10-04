@@ -6,6 +6,7 @@ import { Editor } from './editor/editor';
 import { Simulator } from './logic/simulator';
 import { trace, type TraceResult } from './optics/tracer';
 import { presets } from './presets';
+import { scriptHost } from './scripting/host';
 import { Background } from './render/background';
 import { BeamRenderer } from './render/beams';
 import { FxSystem } from './render/fx';
@@ -16,6 +17,7 @@ import { WireRenderer } from './render/wires';
 import { Hud } from './ui/hud';
 import { Inspector } from './ui/inspector';
 import { mountToolbar } from './ui/toolbar';
+import { ScriptEditor } from './ui/script-editor';
 import { mountTopbar } from './ui/topbar';
 
 const $ = (id: string) => document.getElementById(id)!;
@@ -49,6 +51,7 @@ async function main() {
   mountTopbar($('topbar'), store, fit, { step: stepOnce, reset: () => (sim.reset(), (dirty = true)) });
   mountToolbar($('toolbar'), stageHost, editor);
   new Inspector($('sidepanel'), store, editor, fit);
+  new ScriptEditor(stageHost, store);
 
   // Frame loop: run fixed simulation steps, then re-trace light only when something changed.
   let dirty = true;
@@ -107,7 +110,7 @@ async function main() {
   });
 
   // Handy for debugging and tests from the console.
-  Object.assign(window, { lasersim: { store, stage, sim, presets, trace: () => trace(store.scene, settings, sim.signals(store.scene)) } });
+  Object.assign(window, { lasersim: { store, stage, sim, presets, scriptHost, settings, trace: () => trace(store.scene, settings, sim.signals(store.scene)) } });
 }
 
 main();

@@ -57,7 +57,7 @@ const preset: Preset = {
         wire(bottom, 'out', nq, 'in'),
         wire(S, 'out', ff, 's'),
         wire(R, 'out', ff, 'r'),
-        wire(ff, 'out' === 'out' ? 'q' : 'q', q2, 'in'),
+        wire(ff, 'q', q2, 'in'),
         wire(ff, 'nq', nq2, 'in'),
         wire(top, 'out', laser, 'en'),
       ],

@@ -1,4 +1,5 @@
 import { Pane } from 'tweakpane';
+import { bus } from '../core/bus';
 import { deg, rad } from '../core/math';
 import { getDef } from '../core/registry';
 import { setSetting, settings } from '../core/settings';
@@ -111,8 +112,11 @@ export class Inspector {
     return binding;
   }
 
-  private bindParam(folder: { addBinding: Pane['addBinding'] }, spec: ParamSpec<Props>): void {
+  private bindParam(folder: { addBinding: Pane['addBinding']; addButton: Pane['addButton'] }, spec: ParamSpec<Props>): void {
     switch (spec.kind) {
+      case 'action':
+        folder.addButton({ title: spec.label }).on('click', () => this.boundId && bus.emit(spec.event, this.boundId));
+        break;
       case 'number':
         this.bind(folder, spec.key, { min: spec.min, max: spec.max, step: spec.step, label: spec.label }, 'prop');
         break;

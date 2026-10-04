@@ -4,15 +4,17 @@ import type { ElementView, SceneElement, ViewState } from '../core/types';
 import { flat } from './style';
 
 /**
- * A view made of one Graphics that redraws only when props or selection change.
- * Covers most static parts; animated parts add children to `root` via `setup`.
+ * A view made of one Graphics that redraws only when props, selection, signals
+ * or light change. Animated parts add children to `root` via `setup`.
+ * `extraKey` lets a view redraw on outside state too (checked every frame).
  */
 export function graphicsView<P extends object>(
-  draw: (g: Graphics, props: P, state: ViewState) => void,
+  draw: (g: Graphics, props: P, state: ViewState, el: SceneElement<P>) => void,
   hooks: {
     setup?: (root: Container) => void;
     update?: (el: SceneElement<P>, state: ViewState) => void;
     tick?: (dt: number, el: SceneElement<P>, state: ViewState) => void;
+    extraKey?: (el: SceneElement<P>) => string;
   } = {},
 ): ElementView<P> {
   const root = new Container();
@@ -20,18 +22,24 @@ export function graphicsView<P extends object>(
   root.addChild(g);
   hooks.setup?.(root);
   let key = '';
+  const refresh = (el: SceneElement<P>, state: ViewState) => {
+    const k = JSON.stringify(el.props) + state.selected + JSON.stringify(state.signals) + state.energy.toFixed(2) + (hooks.extraKey?.(el) ?? '');
+    if (k !== key) {
+      key = k;
+      g.clear();
+      draw(g, el.props, state, el);
+    }
+  };
   return {
     root,
     update(el, state) {
-      const k = JSON.stringify(el.props) + state.selected + JSON.stringify(state.signals) + state.energy.toFixed(2);
-      if (k !== key) {
-        key = k;
-        g.clear();
-        draw(g, el.props, state);
-      }
+      refresh(el, state);
       hooks.update?.(el, state);
     },
-    tick: hooks.tick,
+    tick(dt, el, state) {
+      if (hooks.extraKey) refresh(el, state);
+      hooks.tick?.(dt, el, state);
+    },
   };
 }
 

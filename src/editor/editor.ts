@@ -1,5 +1,6 @@
 import { Graphics, type FederatedPointerEvent } from 'pixi.js';
 import { Frame, rad, snapTo, type Vec2 } from '../core/math';
+import { bus } from '../core/bus';
 import { getDef } from '../core/registry';
 import { settings } from '../core/settings';
 import { makeElement, type Store } from '../core/store';
@@ -298,6 +299,10 @@ export class Editor {
   activate(el: SceneElement): void {
     const def = getDef(el.type);
     if (!def) return;
+    if (def.openEvent) {
+      bus.emit(def.openEvent, el.id);
+      return;
+    }
     if (def.trigger) {
       this.runtime.trigger(el.id);
       return;

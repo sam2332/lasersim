@@ -16,12 +16,16 @@ export class Simulator {
   private outputs = new Map<string, Record<string, boolean>>();
   private states = new Map<string, Record<string, unknown>>();
   private triggers = new Set<string>();
+  /** Element types seen last step, so removed elements can release runtimes. */
+  private types = new Map<string, string>();
 
   trigger(id: string): void {
     this.triggers.add(id);
   }
 
   reset(): void {
+    for (const [id, type] of this.types) getDef(type)?.disposeRuntime?.(id);
+    this.types.clear();
     this.time = 0;
     this.ticks = 0;
     this.outputs.clear();
@@ -60,6 +64,7 @@ export class Simulator {
       if (!state) this.states.set(el.id, (state = {}));
       const sig = signals.get(el.id)!;
       const out = def.logic({
+        id: el.id,
         props: el.props,
         inputs: sig.inputs,
         wired: sig.wired,
@@ -76,6 +81,8 @@ export class Simulator {
 
     // Forget removed elements.
     for (const id of this.states.keys()) if (!next.has(id)) this.states.delete(id);
+    for (const [id, type] of this.types) if (!next.has(id)) getDef(type)?.disposeRuntime?.(id);
+    this.types = new Map(scene.elements.filter((e) => next.has(e.id)).map((e) => [e.id, e.type]));
     this.outputs = next;
     this.triggers.clear();
     this.time += dt;

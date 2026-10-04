@@ -2,6 +2,7 @@ import type { Container } from 'pixi.js';
 import type { IconNode } from 'lucide';
 import type { Vec2 } from './math';
 import type { Jones } from '../optics/polarization';
+import type { AppEvents } from './bus';
 import type { Textures } from '../render/textures';
 import type { FxSystem } from '../render/fx';
 
@@ -148,6 +149,8 @@ export interface Signals {
 export const NO_SIGNALS: Signals = Object.freeze({ inputs: {}, wired: {}, outputs: {} }) as Signals;
 
 export interface LogicContext<P> {
+  /** Element id (for elements that keep external runtimes, like scripted chips). */
+  id: string;
   props: P;
   inputs: Record<string, boolean>;
   wired: Record<string, boolean>;
@@ -173,7 +176,9 @@ export type ParamSpec<P> =
   | { kind: 'boolean'; key: Key<P>; label: string }
   | { kind: 'select'; key: Key<P>; label: string; options: Record<string, string | number> }
   | { kind: 'wavelength'; key: Key<P>; label: string }
-  | { kind: 'text'; key: Key<P>; label: string; multiline?: boolean };
+  | { kind: 'text'; key: Key<P>; label: string; multiline?: boolean }
+  /** A button that fires an app event with the element id (e.g. open the script editor). */
+  | { kind: 'action'; label: string; event: keyof AppEvents };
 
 // ---------------------------------------------------------------------------
 // Editing
@@ -264,6 +269,10 @@ export interface ElementDef<P extends object = any> {
   logic?(ctx: LogicContext<P>): Record<string, boolean>;
   /** Output values before the first step (power-on state). */
   initialOutputs?(props: P): Record<string, boolean>;
+  /** Free external runtime resources when the element is removed or the simulation resets. */
+  disposeRuntime?(id: string): void;
+  /** App event fired (with the element id) on double-click, e.g. open an editor. */
+  openEvent?: keyof AppEvents;
 
   createView(ctx: ViewContext): ElementView<P>;
 }
