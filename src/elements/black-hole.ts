@@ -86,7 +86,7 @@ const blackHole: ElementDef<BlackHoleProps> = {
         },
         update: (el) => {
           const r = el.props.horizon;
-          const size = r * (7.5 + 1.5 * el.props.mass);
+          const size = r * (9 + 2 * el.props.mass);
           disk.scale.set(size / 1024);
           disk2.scale.set((size * 0.8) / 1024, (-size * 0.8) / 1024);
           ring.scale.set((r * 2.9) / 512);

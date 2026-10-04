@@ -55,8 +55,8 @@ export function warpPoint(p: Vec2, fields: WorldField[]): Vec2 {
     const dx = f.x - p.x;
     const dy = f.y - p.y;
     const r = Math.hypot(dx, dy);
-    const scaleR = f.horizon * (1.6 + f.k / (f.horizon * 1.8));
-    const g = Math.min(0.96, 1 / (1 + (r / scaleR) ** 1.6));
+    const scaleR = f.horizon * (2.2 + 1.6 * (f.k / (f.horizon * 1.8)));
+    const g = Math.min(0.97, 1 / (1 + (r / scaleR) ** 1.5));
     x += dx * g;
     y += dy * g;
   }

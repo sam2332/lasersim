@@ -43,7 +43,10 @@ async function main() {
 
   // Re-trace lazily: at most once per frame, only when something changed.
   let dirty = true;
+  let lastResult: ReturnType<typeof trace> | null = null;
+  let zoomDirty = false;
   const markDirty = () => (dirty = true);
+  stage.viewport.on('zoomed', () => (zoomDirty = true));
   store.events.on('change', markDirty);
   store.events.on('select', markDirty);
   settingsEvents.on('change', markDirty);
@@ -51,12 +54,15 @@ async function main() {
   stage.app.ticker.add((t) => {
     if (dirty) {
       dirty = false;
-      const result = trace(store.scene, settings);
+      const result = (lastResult = trace(store.scene, settings));
       background.update(store.scene.board, result.fields);
-      beams.draw(result);
+      beams.draw(result, stage.viewport.scale.x);
       views.sync(store.scene, result.energy, store.selectedId);
       hud.update(store.scene, result.energy);
+    } else if (zoomDirty && lastResult) {
+      beams.draw(lastResult, stage.viewport.scale.x);
     }
+    zoomDirty = false;
     const dt = Math.min(0.05, t.deltaMS / 1000);
     views.tick(dt);
     fx.update(dt);

@@ -63,7 +63,7 @@ export class Background {
 
     for (let x = MINOR; x < W; x += MINOR) line(x % MAJOR === 0 ? this.major : this.minor, { x, y: 0 }, { x, y: H });
     for (let y = MINOR; y < H; y += MINOR) line(y % MAJOR === 0 ? this.major : this.minor, { x: 0, y }, { x: W, y });
-    this.minor.stroke({ width: 1, color: 0x8ea3c7, alpha: 0.07 });
-    this.major.stroke({ width: 1.6, color: 0x9fb4d8, alpha: 0.16 });
+    this.minor.stroke({ width: 1, color: 0x8ea3c7, alpha: 0.11, pixelLine: true });
+    this.major.stroke({ width: 1, color: 0xa9bde0, alpha: 0.3, pixelLine: true });
   }
 }

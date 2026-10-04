@@ -20,7 +20,9 @@ export class BeamRenderer {
     this.root.addChild(this.halo, this.body, this.core, this.glintLayer);
   }
 
-  draw(result: TraceResult): void {
+  /** `zoom` is the viewport scale; widths never drop below ~1 screen pixel so beams stay solid. */
+  draw(result: TraceResult, zoom = 1): void {
+    const px = 1 / zoom;
     this.halo.clear();
     this.body.clear();
     this.core.clear();
@@ -35,11 +37,11 @@ export class BeamRenderer {
         for (let i = 1; i < pts.length; i++) g.lineTo(pts[i].x, pts[i].y);
       };
       trace(this.halo);
-      this.halo.stroke({ width: 16, color, alpha: 0.05 * k, cap: 'round', join: 'round' });
+      this.halo.stroke({ width: Math.max(16, 10 * px), color, alpha: 0.05 * k, cap: 'round', join: 'round' });
       trace(this.body);
-      this.body.stroke({ width: 4.5, color, alpha: 0.38 * k, cap: 'round', join: 'round' });
+      this.body.stroke({ width: Math.max(4.5, 3 * px), color, alpha: 0.38 * k, cap: 'round', join: 'round' });
       trace(this.core);
-      this.core.stroke({ width: 1.6, color: lighten(color, 0.55), alpha: 0.95 * k, cap: 'round', join: 'round' });
+      this.core.stroke({ width: Math.max(1.6, 1.3 * px), color: lighten(color, 0.55), alpha: 0.95 * k, cap: 'round', join: 'round' });
     }
 
     let used = 0;
@@ -49,8 +51,8 @@ export class BeamRenderer {
       s.visible = true;
       s.position.set(g.point.x, g.point.y);
       s.tint = lighten(beamColor(g.wavelength), 0.3);
-      s.alpha = Math.min(1, 0.35 + 0.5 * g.intensity);
-      s.scale.set((26 + 18 * Math.min(1, g.intensity)) / 256);
+      s.alpha = Math.min(1, 0.18 + 0.3 * g.intensity);
+      s.scale.set((Math.max(1, px * 0.7) * (16 + 14 * Math.min(1, g.intensity))) / 256);
       s.rotation = (g.point.x * 0.013 + g.point.y * 0.007) % Math.PI;
       used++;
     }
